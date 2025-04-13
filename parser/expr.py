@@ -1,5 +1,5 @@
-from parser.node import ASTNode, BinaryOpNode, LiteralNode, StmtNode
-from lexer.lexer_parser import Lexer
+from parse.node import ASTNode, BinaryOpNode, LiteralNode, StmtNode
+from lexer.lexer_parse import Lexer
 from typing import Optional
 
 
@@ -108,7 +108,7 @@ def parse_mul(lexer: Lexer) -> Optional[ASTNode]:
         left = node
     return left
 
-def parser_expr(lexer: Lexer) -> Optional[ASTNode]:
+def parse_expr(lexer: Lexer) -> Optional[ASTNode]:
     token = parse_or(lexer)
     if not token:
         return None
@@ -122,9 +122,9 @@ def parser_expr(lexer: Lexer) -> Optional[ASTNode]:
     return token
 
 
-def parser_stmt(lexer: Lexer) -> Optional[ASTNode]:
+def parse_stmt(lexer: Lexer) -> Optional[ASTNode]:
     node = StmtNode("stmt")
-    while (exp := parser_expr(lexer)) is not None:
+    while (exp := parse_expr(lexer)) is not None:
         lexer.expect(";")
         lexer.pop()
         node.children.append(exp)
