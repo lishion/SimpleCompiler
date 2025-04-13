@@ -1,14 +1,13 @@
 from abc import abstractmethod
-from lexer.state import Edge, NFAState, NFA, CharRange
+from lexer.state import Edge, NFAState, NFA, CharRange, AnyStr
 from typing import List, Optional
 from lexer.utils import split_range_by
 import sys
-from lexer.token import Token
 
 
 class Expression:
 
-    def __init__(self, accept_as: Optional[Token] = None):
+    def __init__(self, accept_as: Optional = None):
         self.accept_as = accept_as
 
     def to_nfa(self) -> NFA:
@@ -22,6 +21,13 @@ class Expression:
     @staticmethod
     def char(ch: str) -> 'Expression':
         return CharExpression(ch)
+
+    @staticmethod
+    def empty():
+        return EmptyExpression()
+
+    def optional(self):
+        return OrExpression([self, Expression.empty()])
 
     def star(self):
         return StarExpression(self)
@@ -53,9 +59,15 @@ class Expression:
         return ConcatExpression(list(exps))
 
     @staticmethod
-    def any_char(except_chars):
-        ranges = split_range_by(0, sys.maxunicode, except_chars)
+    def any_char(except_chars: List[AnyStr]=None):
+        ranges = split_range_by(0, sys.maxunicode, except_chars or [])
         return OrExpression([Expression.range(chr(s), chr(e)) for s, e in ranges])
+
+    def __add__(self, other: 'Expression'):
+        return ConcatExpression([self, other])
+
+    def __or__(self, other):
+        return OrExpression([self, other])
 
 
 class RangeExpression(Expression):
@@ -75,6 +87,17 @@ class CharExpression(RangeExpression):
 
     def __init__(self, accept: str):
         super().__init__(ord(accept), ord(accept))
+
+
+class EmptyExpression(Expression):
+
+    def __init__(self):
+        super().__init__()
+
+    def exp_to_nfa(self) -> NFA:
+        end_state = NFAState()
+        entry = Edge.empty(end_state)
+        return NFA(entry, end_state)
 
 
 class OrExpression(Expression):

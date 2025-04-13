@@ -1,47 +1,48 @@
 from unittest import TestCase
 from lexer.re_expression import *
-from lexer.token import TokenDef
-from lexer.lexer_parser import Lexer, SimpleCharSteam
+from lexer.tokendef import TokenFactory, EOF
+from lexer.lexer_parser import BaseLexer, SimpleCharSteam
 
 
 class TestCharRange(TestCase):
     def test_char(self):
-        tokenDef = TokenDef()
-        # tokenDef.create(Expression.range("a", "z").many(), "token")
-        # tokenDef.create(Expression.range("a", "z").many(), "token")
-
-        [tokenDef.create_by_string(c) for c in "+-*/=;"]
-        tokenDef.create(
-            Expression.concat(
-                Expression.Or(
-                    Expression.range("a", "z"),
-                    Expression.range("A", "Z"),
-                    Expression.char("_"),
-                ),
-                Expression.Or(
-                    Expression.range("a", "z"),
-                    Expression.range("A", "Z"),
-                    Expression.range("0", "9"),
-                    Expression.char("_"),
-                ).any(),
-            ),
-            "id"
-        )
+        tokenDef = TokenFactory()
+        #
+        # [tokenDef.create_by_string(c) for c in "+-*/=;><"]
+        # tokenDef.create_by_string("let")
+        # tokenDef.create(
+        #     (
+        #             Expression.range("a", "z")
+        #             | Expression.range("A", "Z")
+        #             | Expression.char("_")
+        #     )
+        #     + (
+        #             Expression.range("a", "z")
+        #             | Expression.range("A", "Z")
+        #             | Expression.range("0", "9")
+        #             | Expression.char("_")
+        #     ),
+        #     "Identifier"
+        # )
         tokenDef.create(
             Expression.concat(
                 Expression.char('"'),
-                Expression.any_char('"').any(),
+                (
+                      Expression.any_char(['"', '\\'])
+                    | Expression.string(r'\"')
+                 ).any(),
                 Expression.char('"')
             ),
             "lit"
         )
-        #
-        tokenDef.create(Expression.range('0', '9').many(), "number")
+        # #
+        # tokenDef.create(
+        #     Expression.range('0', '9').many(),
+        #     "int")
         #
         # tokenDef.create(
-        #     Expression.string("public"),
-        #     "public"
-        # )
+        #     Expression.range('0', '9').many() + Expression.char(".") + Expression.range('0', '9').many(),
+        #     "float")
         #
         tokenDef.create(
             Expression.one_of(
@@ -53,6 +54,18 @@ class TestCharRange(TestCase):
             "white_space"
         )
 
-        lexer = Lexer()
-        lexer.parse(tokenDef.tokens(), SimpleCharSteam('let a= "1";let b = 21231231'))
+        # tokenDef.create(Expression.char("a") + (Expression.char(".") + Expression.char("b")).optional(), "ab")
 
+        lexer = BaseLexer(tokenDef, SimpleCharSteam(r'"123\"" "333"'))
+
+
+
+        while lexer.peek() != EOF:
+            print(lexer.pop().text)
+
+
+        # let a123213 = "a 1"
+        # let
+        # a123213
+        # =
+        # 1

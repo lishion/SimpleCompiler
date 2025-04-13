@@ -3,13 +3,11 @@ from lexer.re_expression import Expression
 
 
 @dataclass
-class Token:
+class TokenDef:
     name: str
     index: int
     exp: Expression
     tag: str
-    text_range: (str, str)
-    position: (int, int)
 
     def __str__(self):
         return f"Token(index={self.index}, name={self.name}, tag={self.tag})"
@@ -17,15 +15,18 @@ class Token:
     def __repr__(self):
         return self.__str__()
 
+    def __eq__(self, other: 'TokenDef'):
+        return self.name == other.name
 
-class TokenDef:
+
+class TokenFactory:
 
     def __init__(self):
         self.index = 0
         self.token_mapping = {}
 
     def create(self, exp: Expression, name: str, tag: str = None):
-        token = Token(name, self.index, exp, tag)
+        token = TokenDef(name, self.index, exp, tag)
         self.token_mapping[self.index] = token
         self.index += 1
         return token
@@ -42,3 +43,17 @@ class TokenDef:
 
     def tokens(self):
         return self.token_mapping.values()
+
+
+@dataclass
+class Token:
+    name: str
+    text: str
+    position: (int, int)
+
+
+EOF = Token(
+        "__EOF__",
+        "",
+        None
+)

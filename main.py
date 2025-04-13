@@ -1,10 +1,10 @@
 from lexer.re_expression import *
-from lexer.token import Token, TokenDef
-from lexer.lexer_parser import Lexer, SimpleCharSteam
+from lexer.tokendef import TokenDef, TokenFactory
+from lexer.lexer_parser import BaseLexer, SimpleCharSteam
 from lexer.utils import dis_join
 
 if __name__ == '__main__':
-    tokenDef = TokenDef()
+    tokenDef = TokenFactory()
     tokenDef.create(
         Expression.range('a', 'z'),
         "id"
@@ -43,5 +43,5 @@ if __name__ == '__main__':
     #     "white_space"
     # )
 
-    lexer = Lexer()
+    lexer = BaseLexer()
     lexer.parse(tokenDef.tokens(), SimpleCharSteam("let a=1 b12321312=1"))

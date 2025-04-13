@@ -23,7 +23,7 @@ class Edge:
 
 class NFAState:
     def __init__(self, edges: List[Edge] = None):
-        self.edges = edges or []
+        self.edges: List[Edge] = edges or []
         self.accept_as = None
 
     def add_edge(self, edge: Edge):

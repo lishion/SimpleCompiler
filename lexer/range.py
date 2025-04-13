@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from bisect import bisect_left
 from dataclasses import dataclass
 
@@ -17,11 +17,17 @@ class CharRange:
         char_code = ord(char)
         return CharRange(char_code, char_code)
 
-    def cover(self, start: int, end: int=None):
+    @staticmethod
+    def index(char: int):
+        return CharRange(char, char)
+
+    # 判断一个值是否在该范围内
+    def cover(self, start: int, end: Optional[int]=None):
         if end is None:
             return self.start <= start <= self.end
         return self.start <= start and end <= self.end
 
+    # 判断一个 range 是否在该范围内
     def cover_range(self, r: 'CharRange'):
         return self.cover(r.start, r.end)
 
