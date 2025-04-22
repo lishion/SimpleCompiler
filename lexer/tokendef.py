@@ -47,7 +47,7 @@ class TokenFactory:
 
 @dataclass
 class Token:
-    name: str
+    token_type: str
     text: str
     position: (int, int)
 

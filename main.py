@@ -1,6 +1,6 @@
 from lexer.re_expression import *
 from lexer.tokendef import TokenDef, TokenFactory
-from lexer.lexer_parser import BaseLexer, SimpleCharSteam
+from lexer.lexer import BaseLexer, SimpleCharSteam
 from lexer.utils import dis_join
 
 if __name__ == '__main__':

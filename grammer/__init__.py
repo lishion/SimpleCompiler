@@ -5,7 +5,7 @@ from lexer.tokendef import TokenFactory
 
 TOKENS = TokenFactory()
 
-[TOKENS.create_by_string(c) for c in "+-*/=;()<>{}[]"]
+[TOKENS.create_by_string(c) for c in "+-*/=;()<>{}[],:"]
 TOKENS.create_by_string(">=")
 TOKENS.create_by_string("<=")
 TOKENS.create_by_string("==")
@@ -13,6 +13,12 @@ TOKENS.create_by_string("!=")
 TOKENS.create_by_string("let")
 TOKENS.create_by_string("and")
 TOKENS.create_by_string("or")
+TOKENS.create_by_string("if")
+TOKENS.create_by_string("else")
+TOKENS.create_by_string("elif")
+TOKENS.create_by_string("for")
+TOKENS.create_by_string("while")
+TOKENS.create_by_string("def")
 TOKENS.create(
     (
             Expression.range("a", "z")
@@ -28,13 +34,16 @@ TOKENS.create(
     "id"
 )
 TOKENS.create(
-    Expression.concat(
-        Expression.char('"'),
-        Expression.any_char().any(),
-        Expression.char('"')
-    ),
-    "lit"
-)
+            Expression.concat(
+                Expression.char('"'),
+                (
+                      Expression.any_char(['"', '\\'])
+                    | Expression.string(r'\"')
+                 ).any(),
+                Expression.char('"')
+            ),
+            "lit"
+        )
 #
 TOKENS.create(
     Expression.range('0', '9').many(),

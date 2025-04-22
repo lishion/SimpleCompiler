@@ -1,7 +1,7 @@
 from unittest import TestCase
 from lexer.re_expression import *
 from lexer.tokendef import TokenFactory, EOF
-from lexer.lexer_parser import BaseLexer, SimpleCharSteam
+from lexer.lexer import BaseLexer, SimpleCharSteam
 
 
 class TestCharRange(TestCase):

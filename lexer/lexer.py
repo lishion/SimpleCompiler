@@ -117,12 +117,22 @@ class Lexer(ABC):
     @abstractmethod
     def peek(self) -> Token: pass
 
-    def expect(self, *args):
-        if self.peek().name in args:
-            return self.peek()
+    def expect(self, *args, pop=False):
+        if self.peek().token_type in args:
+            res = self.peek()
+            if pop:
+                self.pop()
+            return res
         else:
-            raise SyntaxError(f"expect token in {args}, but got {self.peek().name}")
+            raise SyntaxError(f"expect token in {args}, but got {self.peek().token_type}")
 
+    def expect_pop(self, *args):
+        return self.expect(*args, pop=True)
+
+    def try_peek(self, token_type):
+        if self.peek().token_type == token_type:
+            return self.peek()
+        return None
 
 class MockLexer(Lexer):
 
@@ -180,7 +190,7 @@ class BaseLexer(Lexer):
     def _parse_all(self) -> List[Token]:
         res = []
         while (token := self._parse_token()) != Lexer.EOF:
-            if not self._ignore or token.name != self._ignore:
+            if not self._ignore or token.token_type != self._ignore:
                 res.append(token)
         res.append(Lexer.EOF)
         return res
