@@ -19,6 +19,10 @@ TOKENS.create_by_string("elif")
 TOKENS.create_by_string("for")
 TOKENS.create_by_string("while")
 TOKENS.create_by_string("def")
+TOKENS.create_by_string("let")
+TOKENS.create_by_string("type")
+TOKENS.create_by_string("return")
+TOKENS.create_by_string("impl")
 TOKENS.create(
     (
             Expression.range("a", "z")
@@ -42,7 +46,7 @@ TOKENS.create(
                  ).any(),
                 Expression.char('"')
             ),
-            "lit"
+            "string"
         )
 #
 TOKENS.create(

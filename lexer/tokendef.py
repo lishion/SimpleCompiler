@@ -49,11 +49,13 @@ class TokenFactory:
 class Token:
     token_type: str
     text: str
-    position: (int, int)
+    row: int
+    column: (int, int)
 
 
 EOF = Token(
         "__EOF__",
         "",
+        None,
         None
 )

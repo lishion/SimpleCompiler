@@ -2,7 +2,7 @@ from unittest import TestCase
 from lexer.re_expression import *
 from lexer.tokendef import TokenFactory, EOF
 from lexer.lexer import BaseLexer, SimpleCharSteam
-
+from grammer import TOKENS
 
 class TestCharRange(TestCase):
     def test_char(self):
@@ -63,9 +63,18 @@ class TestCharRange(TestCase):
         while lexer.peek() != EOF:
             print(lexer.pop().text)
 
-
-        # let a123213 = "a 1"
-        # let
-        # a123213
-        # =
-        # 1
+    def test_position(self):
+        code = """
+let let;
+def test(a: String): String{
+              return a;
+           }
+           def test(b: Int): Int{
+              return b;
+           }
+           print(a123);
+           print(test("1"));
+        """
+        lexer = BaseLexer(TOKENS, code, ignore="white_space")
+        while lexer.peek() != EOF:
+            print(lexer.pop())

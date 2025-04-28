@@ -23,6 +23,7 @@ class SimpleCharSteam(CharStream):
     def __init__(self, string: str):
         self.string = list(string)
         self.current_index = 0
+        self.rows = string.split("\n")
 
     def peek(self):
         if self.current_index == len(self.string):
@@ -35,6 +36,9 @@ class SimpleCharSteam(CharStream):
             return CharStream.EOF
         self.current_index += 1
         return res
+
+    def peek_line(self, row):
+        return self.rows[row]
 
 
 class IndexAssigner:
@@ -134,6 +138,10 @@ class Lexer(ABC):
             return self.peek()
         return None
 
+    @abstractmethod
+    def unpop(self) -> Token: pass
+
+
 class MockLexer(Lexer):
 
     def __init__(self, tokens):
@@ -150,10 +158,16 @@ class MockLexer(Lexer):
         self._token_index += 1
         return res
 
+    def unpop(self):
+        self._token_index -= 1
+        return self._tokens[self._token_index]
+
+
 
 class BaseLexer(Lexer):
 
     def __init__(self, tokens: TokenFactory, chars: Union[CharStream, str], ignore: str=None):
+        super().__init__()
         self._token_def = tokens
         self._current_token_detail: Optional[Token] = None
         self._current_token: Optional[TokenDef] = None
@@ -165,7 +179,9 @@ class BaseLexer(Lexer):
         self._index = 1
         self._start_index = 1
         self._ignore = ignore
+        self.row = 1
         self._mock_lexer = MockLexer(self._parse_all())
+
 
 
     def _create_exp(self, tokens):
@@ -180,6 +196,9 @@ class BaseLexer(Lexer):
 
     def pop(self) -> Token:
         return self._mock_lexer.pop()
+
+    def unpop(self) -> Token:
+        return self._mock_lexer.unpop()
 
     def init(self):
         self._current_token = None
@@ -205,7 +224,11 @@ class BaseLexer(Lexer):
             next_state = self._state_table.trans(c)
             if not next_state:
                 if self._current_token:
-                    self._current_token_detail = Token(self._current_token.name, text=self._current_text, position=(self._start_index, self._start_index + len(self._current_text) - 1))
+                    if self._current_text == '\n':
+                        self.row += 1
+                        self._start_index = 1
+                        self._index = 1
+                    self._current_token_detail = Token(self._current_token.name, text=self._current_text, row=self.row, column=(self._start_index, self._start_index + len(self._current_text) - 1))
                     res = self._current_token_detail
                     self.init()
                     return res
@@ -218,3 +241,16 @@ class BaseLexer(Lexer):
                 self._current_text += chr(c)
                 self._chars.pop()
                 self._index += 1
+
+    def expect(self, *args, pop=False):
+        if self.peek().token_type in args:
+            res = self.peek()
+            if pop:
+                self.pop()
+            return res
+        else:
+            token = self.peek()
+            raise SyntaxError(f"expect a {args}, but got {self.peek().token_type}" + '\n' + self._chars.peek_line(token.row - 1) + "  at line " + str(token.row) + '\n' + ("-" * (token.column[0] - 1)) + "^" * len(token.text))
+
+    def expect_pop(self, *args):
+        return self.expect(*args, pop=True)
