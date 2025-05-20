@@ -32,7 +32,7 @@ class CodeRepr:
     need_shift: bool = None
 
     def __str__(self):
-        string = None
+        string = ''
         if self.const is not None:
             string = self.const
         elif self.name is not None:
@@ -41,7 +41,7 @@ class CodeRepr:
             string = self.var
         elif self.op_num is not None:
             string = self.op_num
-        return f"{self.op_name} {string}"
+        return f"{self.op_name.value.ljust(20, ' ')} {string}"
 
     def __repr__(self):
         return self.__str__()
@@ -113,4 +113,4 @@ class ConcreteBytecodeConverter:
         return bytecode
 
 def repr_to_bytecode(bytecodes: List[CodeRepr|Comment]):
-    return ConcreteBytecodeConverter(bytecodes).convert()
+    return ConcreteBytecodeConverter(bytecodes).show().convert()

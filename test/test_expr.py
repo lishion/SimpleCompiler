@@ -469,11 +469,11 @@ class Test(TestCase):
 
         node, scope_manager = self.test_parse(source)
         bytecode_obj = BytecodeGenerateVisitor().visit_proc(node)
-        print('varnames:', bytecode_obj.varnames)
-        print('consts:', bytecode_obj.consts)
-        print('global', bytecode_obj.names)
-        for instr in bytecode_obj:
-            print(instr)
+        # print('varnames:', bytecode_obj.varnames)
+        # print('consts:', bytecode_obj.consts)
+        # print('global', bytecode_obj.names)
+        # for instr in bytecode_obj:
+        #     print(instr)
         exec(bytecode_obj.to_code(), {'defaultdict': defaultdict})
 
     def test_man(self):
