@@ -1,13 +1,14 @@
 from lexer.tokendef import TokenDef, Token, EOF as EOF_TOKEN, TokenFactory
 from lexer.state import DFAState
 from lexer.utils import nfa_to_dfa
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Set
 from lexer.re_expression import OrExpression
 from lexer.range import CharRange
 from collections import defaultdict
 from lexer.range import RangeSearch
 from abc import ABC, abstractproperty, abstractmethod
-
+from error.exception import SyntaxError
+from error.reporter import SourceCodeMaker
 
 class CharStream:
 
@@ -166,7 +167,7 @@ class MockLexer(Lexer):
 
 class BaseLexer(Lexer):
 
-    def __init__(self, tokens: TokenFactory, chars: Union[CharStream, str], ignore: str=None):
+    def __init__(self, tokens: TokenFactory, line_marker: SourceCodeMaker, chars: Union[CharStream, str], ignore: Set[str]=None):
         super().__init__()
         self._token_def = tokens
         self._current_token_detail: Optional[Token] = None
@@ -176,12 +177,13 @@ class BaseLexer(Lexer):
         self._state_table = StateTable(self._dfa)
         self._current_text = ""
         self._chars = SimpleCharSteam(chars) if type(chars) is str else chars
-        self._index = 1
-        self._start_index = 1
+        self._col = 1
+        self._start_col = 1
         self._ignore = ignore
         self.row = 1
+        self._start_row = 1
         self._mock_lexer = MockLexer(self._parse_all())
-
+        self._line_marker = line_marker
 
 
     def _create_exp(self, tokens):
@@ -204,12 +206,13 @@ class BaseLexer(Lexer):
         self._current_token = None
         self._current_text = ""
         self._state_table.init()
-        self._start_index = self._index
+        self._start_col = self._col
+        self._start_row = self.row
 
     def _parse_all(self) -> List[Token]:
         res = []
         while (token := self._parse_token()) != Lexer.EOF:
-            if not self._ignore or token.token_type != self._ignore:
+            if token.token_type not in self._ignore:
                 res.append(token)
         res.append(Lexer.EOF)
         return res
@@ -226,9 +229,12 @@ class BaseLexer(Lexer):
                 if self._current_token:
                     if self._current_text == '\n':
                         self.row += 1
-                        self._start_index = 1
-                        self._index = 1
-                    self._current_token_detail = Token(self._current_token.name, text=self._current_text, row=self.row, column=(self._start_index, self._start_index + len(self._current_text) - 1))
+                        self._col = 1
+                    self._current_token_detail = Token(self._current_token.name,
+                                                       text=self._current_text,
+                                                       start_pos=(self._start_row, self._start_col),
+                                                       end_pos=(self.row, self._col - 1)
+                                                       )
                     res = self._current_token_detail
                     self.init()
                     return res
@@ -240,7 +246,7 @@ class BaseLexer(Lexer):
             else:
                 self._current_text += chr(c)
                 self._chars.pop()
-                self._index += 1
+                self._col += 1
 
     def expect(self, *args, pop=False):
         if self.peek().token_type in args:
@@ -250,7 +256,11 @@ class BaseLexer(Lexer):
             return res
         else:
             token = self.peek()
-            raise SyntaxError(f"expect a {args}, but got {self.peek().token_type}" + '\n' + self._chars.peek_line(token.row - 1) + "  at line " + str(token.row) + '\n' + ("-" * (token.column[0] - 1)) + "^" * len(token.text))
+            if token == Lexer.EOF:
+                previous_token = self.unpop()
+                raise SyntaxError(f"unexpected EOF after\n" + self._line_marker.mark(previous_token.start_pos, previous_token.end_pos))
+            expect_token = " ".join([f"'{x}'" for x in args])
+            raise SyntaxError(f"expect token in {expect_token}, but got '{self.peek().token_type}'\n" + self._line_marker.mark(token.start_pos, token.end_pos))
 
     def expect_pop(self, *args):
         return self.expect(*args, pop=True)

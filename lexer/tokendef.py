@@ -49,8 +49,9 @@ class TokenFactory:
 class Token:
     token_type: str
     text: str
-    row: int
-    column: (int, int)
+    start_pos: (int, int)
+    end_pos: (int, int)
+
 
 
 EOF = Token(

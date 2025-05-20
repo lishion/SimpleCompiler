@@ -1,17 +1,16 @@
-import json
-from typing import List, Any, Tuple, Optional
+from typing import List, Any, Tuple, Optional, Union
 from abc import ABC, abstractmethod
-from parser.scope import SCOPE_MANAGER, Scope
+from parser.scope import Scope
+from parser.types import FunctionSignature
 
 
 class ASTNode(ABC):
 
-    def __init__(self, node_type: str):
+    def __init__(self, node_type: str=None):
         self.node_type = node_type
         self.scope: Optional[Scope] = None
-
-    @abstractmethod
-    def eval(self) -> Any: pass
+        self.start_pos = None
+        self.end_pos = None
 
     @abstractmethod
     def accept(self, visitor: 'Visitor'): pass
@@ -21,7 +20,7 @@ class ASTNode(ABC):
             if type(data) is dict:
                 r = {}
                 for k, v in data.items():
-                    if k in ("scope", "node_type"):
+                    if k in ("scope", "node_type", "start_pos", "end_pos", 'trait_node'):
                         continue
                     if isinstance(v, list) or isinstance(v, tuple):
                         r[k] = helper(v, level + 1)
@@ -99,38 +98,29 @@ class IdNode(ASTNode):
 
     def __init__(self, name):
         super().__init__("id")
-        self.name = name
+        self.name: str = name
 
-    def eval(self) -> Any:
-        return SCOPE_MANAGER.current.lookup(self.name)
 
     def accept(self, visitor: 'Visitor'):
-        return None
+        return visitor.visit_identifier(self)
 
 
 class VarNode(ASTNode):
-    def __init__(self, name: IdNode):
+    def __init__(self, identifier: IdNode, is_self: bool = False):
         super().__init__("var")
-        self.name = name
+        self.identifier = identifier
+        self.is_self = is_self
 
-    def eval(self) -> Any:
-        return SCOPE_MANAGER.current.lookup(self.name)
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_var(self)
 
 class AssignNode(ASTNode):
 
-    def __init__(self, left: VarNode=None, right: ASTNode=None):
+    def __init__(self, var: VarNode=None, right: ASTNode=None):
         super().__init__("assign_op")
-        self.left = left
-        self.right = right
-
-    def eval(self) -> Any:
-        key = self.left.name
-        value = self.right.eval()
-        SCOPE_MANAGER.current.set(key, value)
-        return value
+        self.var = var
+        self.assign_expr = right
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_assign(self)
@@ -158,7 +148,7 @@ class LiteralNode(ASTNode):
 
 class TypeNode(ASTNode):
 
-    def __init__(self, name):
+    def __init__(self, name: str):
         super().__init__("type")
         self.name = name
 
@@ -167,6 +157,18 @@ class TypeNode(ASTNode):
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_type(self)
+
+
+class FunctionTypeNode(ASTNode):
+
+    def __init__(self, arg_types: List[Union[TypeNode, 'FunctionTypeNode']], return_type: Union[TypeNode,'FunctionTypeNode']=None):
+        super().__init__("functype")
+        self.args = arg_types
+        self.return_type = return_type
+
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_function_type(self)
+
 
 
 class BlockNode(ASTNode):
@@ -187,25 +189,14 @@ class BlockNode(ASTNode):
 
 class FunctionCallNode(ASTNode):
 
-    def __init__(self, function_name, args=None):
+    def __init__(self, call_source: ASTNode, args=None):
         super().__init__("func_call")
-        self.function_name = function_name
+        self.call_source = call_source
         self.args: List[ASTNode] = args or []
-        self.define: 'FuncDefNode' = None
+        self.signature: 'FunctionSignature' = None
         self.symbol: 'FunctionSymbol' = None
+        self.is_trait_function = False
 
-    def eval(self) -> Any:
-        func = SCOPE_MANAGER.current_scope.lookup(self.function_name)
-        SCOPE_MANAGER.enter()
-        if isinstance(func, FuncDefNode):
-            arg_names = func.args
-            for name, value in zip(arg_names, self.args):
-                SCOPE_MANAGER.current_scope.set(name, value.eval())
-            res = func.body.eval()
-        else:
-            res = func(*[x.eval() for x in self.args])
-        SCOPE_MANAGER.exit()
-        return res
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_function_call(self)
@@ -257,13 +248,6 @@ class IfStatement(ASTNode):
         self.branches = branches
         self.else_branch = else_branch
 
-    def eval(self) -> Any:
-        for condition, body in self.branches:
-            if condition.eval():
-                return body.eval()
-        if self.else_branch:
-            return self.else_branch.eval()
-
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_if(self)
 
@@ -286,11 +270,11 @@ class TypeDefNode(ASTNode):
     def eval(self) -> Any:
         return None
     def accept(self, visitor: 'Visitor'):
-        visitor.visit_type_def(self)
+        return visitor.visit_type_def(self)
 
 
 class VarDefNode(ASTNode):
-    def __init__(self, var_node: IdNode, var_type: TypeNode, init_expr: ASTNode=None):
+    def __init__(self, var_node: IdNode, var_type: TypeNode | FunctionTypeNode, init_expr: ASTNode=None):
         super().__init__("var_decl")
         self.var_node = var_node
         self.var_type = var_type
@@ -300,25 +284,22 @@ class VarDefNode(ASTNode):
         return None
 
     def accept(self, visitor: 'Visitor'):
-        visitor.visit_var_def(self)
+        return visitor.visit_var_def(self)
 
 
 
 class FuncDefNode(ASTNode):
 
-    def __init__(self, name: IdNode, args: List[VarDefNode], body: BlockNode, return_type: TypeNode):
+    def __init__(self, name: IdNode, args: List[VarDefNode], body: BlockNode, return_type: TypeNode, trait_node: 'TraitImplNode'):
         super().__init__("func_def")
         self.name = name
         self.args = args
         self.body = body
         self.return_type = return_type
-
-    def eval(self) -> Any:
-        SCOPE_MANAGER.current_scope.add(self.name, self)
-
+        self.trait_node: TraitImplNode = trait_node
 
     def accept(self, visitor: 'Visitor'):
-        return visitor.visit_funcdef(self)
+        return visitor.visit_func_def(self)
 
 class ProcNode(ASTNode):
 
@@ -345,3 +326,72 @@ class ReturnNode(ASTNode):
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_return(self)
 
+class DataInitNode(ASTNode):
+
+    def __init__(self, type_name: TypeNode, body: List[AssignNode]):
+        super().__init__("typeinit")
+        self.type_name = type_name
+        self.body = body
+
+    def accept(self, visitor: 'Visitor') -> Any:
+        return visitor.visit_type_init(self)
+
+class TraitFunctionNode(ASTNode):
+    def __init__(self, name: IdNode, args: List[VarDefNode], return_type: TypeNode):
+        super().__init__("trait_function")
+        self.name = name
+        self.args = args
+        self.return_type = return_type
+
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_trait_function(self)
+
+
+class TraitNode(ASTNode):
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_trait_node(self)
+
+    def __init__(self, name: IdNode):
+        super().__init__("trait")
+        self.name = name
+
+
+class TraitDefNode(ASTNode):
+    def __init__(self, trait_name: IdNode, type_var: TypeNode, trait_functions: List[TraitFunctionNode]):
+        super().__init__("trait_node")
+        self.trait_name = trait_name
+        self.type_var = type_var
+        self.trait_functions = trait_functions
+
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_trait_def(self)
+
+class TraitConstraintNode(ASTNode):
+
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_type_constraint(self)
+
+    def __init__(self, traits: List[TraitNode]):
+        super().__init__("trait_constraint")
+        self.traits = traits
+
+class TraitImplNode(ASTNode):
+    def __init__(self, trait: TraitNode, target_type: TypeNode, impls: List[FuncDefNode]):
+        super().__init__("trait_impl")
+        self.trait = trait
+        self.target_type = target_type
+        self.impls = impls
+
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_trait_impl(self)
+
+
+class AttributeNode(ASTNode):
+
+    def __init__(self, data: ASTNode, attr: IdNode):
+        super().__init__("properties")
+        self.data = data
+        self.attr = attr
+
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_attribute(self)

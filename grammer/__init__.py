@@ -5,7 +5,7 @@ from lexer.tokendef import TokenFactory
 
 TOKENS = TokenFactory()
 
-[TOKENS.create_by_string(c) for c in "+-*/=;()<>{}[],:"]
+[TOKENS.create_by_string(c) for c in "+-*/=;()<>{}[],:."]
 TOKENS.create_by_string(">=")
 TOKENS.create_by_string("<=")
 TOKENS.create_by_string("==")
@@ -23,6 +23,14 @@ TOKENS.create_by_string("let")
 TOKENS.create_by_string("type")
 TOKENS.create_by_string("return")
 TOKENS.create_by_string("impl")
+TOKENS.create_by_string("trait")
+TOKENS.create_by_string("->")
+TOKENS.create_by_string("null")
+TOKENS.create_by_string("self")
+TOKENS.create(
+    Expression.char("#") + Expression.any_char(['\n']).star(),
+    "comment"
+)
 TOKENS.create(
     (
             Expression.range("a", "z")
