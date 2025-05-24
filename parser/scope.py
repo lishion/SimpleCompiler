@@ -69,7 +69,7 @@ class Scope:
         defined_symbol = self.symbols.get(symbol.name)
         if defined_symbol:
                 raise DuplicateDefineError(
-                    f'A {defined_symbol.symbol_type.value.lower()} with name `{symbol.name}` already exists')
+                    f'"{symbol.name}" already exists')
         self.symbols[symbol.name] = symbol
         self.current_names.append(symbol.name)
 
@@ -124,7 +124,7 @@ class ScopeManager:
             if isinstance(symbol, FunctionSymbol):
                 raise ValueError(f"function {symbol.name} with args type ({','.join(symbol.args_type)}) already exists")
             else:
-                raise ValueError(f"{symbol.symbol_type.identifier} {symbol.name} already exists")
+                raise ValueError(f"{symbol.name} already exists")
 
     @property
     def current(self) -> Scope:

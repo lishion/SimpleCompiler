@@ -82,7 +82,7 @@ def init_global_scope(scope_manager: ScopeManager):
     scope_manager.add_type(TypeSymbol("Float"))
     scope_manager.add_type(TypeSymbol("Bool"))
     scope_manager.add_type(TypeSymbol("Unit"))
-    scope_manager.global_scope.add(FunctionSymbol("echo", FunctionSignature((Type("String"),), Type("Unit")), native_call=print))
+    scope_manager.global_scope.add(FunctionSymbol("echo", FunctionSignature((Type("Any"),), Type("Unit")), native_call=print))
     scope_manager.add_trait(
         TraitSymbol(
             "Write",
@@ -109,14 +109,11 @@ def type_check(expect_type: Type|TraitConstraintsType, actual_type: Type, scope:
         impled_trait_names = set(impled_traits.keys())
         constraints = set(expect_type.constraints)
         return constraints - impled_trait_names
-        # if not_implemented:
-        #     raise TypeConstraintError(f"Type constraints check failed. "
-        #                               f"trait {not_implemented} is not implement in type `{actual_type}`.\n" + self.error_reporter.mark(
-        #         node.args[index], context_node=node))
+    if expect_type.name == "Any" or actual_type.name == "Any":
+        return False
     # 否则直接比较类型是否相等
     return expect_type != actual_type
-        # raise TypeError(f"Expected type `{expect_type}` but got type `{actual_type}`.\n" + self.error_reporter.mark(
-        #     node.args[index], context_node=node))
+
 
 def died_branch():
     raise Exception("can not reach here")

@@ -52,31 +52,69 @@ class Test(TestCase):
         #
         #     def b():
         #         a1()
-        # import dis
+        import dis
         # dis.dis(a)
 
+        from bytecode import ConcreteBytecode, ConcreteInstr
+        import types
 
+        def test():
+            if 2 >= 1:
+                b =  1 + 2
+                echo(b)
 
-        bytecode = ConcreteBytecode()
-        bytecode.consts = [{"a": 1}]
-        bytecode.names = ["get"]
-        bytecode.varnames = ["a"]
-        bytecode.extend([
-            ConcreteInstr("LOAD_CONST", 0),
-            ConcreteInstr("LOAD_ATTR", (0<<1)|1),  # 加载 a
-            ConcreteInstr("LOAD_CONST", 0),
-            ConcreteInstr("CALL", 1),
-        ])
-        bytecode.varnames = ['a', 'b']
-        bytecode.argcount = 2
-        code = bytecode.to_code()
-        # add_func = FunctionType(code, globals(), 'add')
-        # print(ConcreteInstr("LOAD_FAST", 0).size)
+        dis.dis(test)
+        for x in dis.get_instructions(test):
+            print(x)
 
-        # class A:
-        #     def __init__(self):
-        #         self.b = 1
-        #
-        # dis.dis(A)
+        # bytecode = test.__code__.co_code
+        # for i, instr in enumerate(dis.Bytecode(bytecode)):
+        #     print(f"{i}: {instr.opname} (arg={instr.arg})")
 
+        # 设置常量和变量
+        consts = [None, 1, -1]
+        varnames = ['x']
+
+        # 初始化 bytecode 对象
+        code = ConcreteBytecode()
+        code.argcount = 1
+        code.name = "foo"
+        code.filename = "example"
+        code.flags = 0
+        code.consts = consts
+        code.varnames = varnames
+
+        # 指令序列（字节码偏移基于具体跳转计算）
+        instructions = [
+            # if x > 0:
+            ConcreteInstr('LOAD_FAST', 0),  # x
+            ConcreteInstr('LOAD_CONST', 1),  # 1
+            ConcreteInstr('COMPARE_OP', 4),  # >
+            ConcreteInstr('POP_JUMP_IF_FALSE', 2),  # 跳到 else 分支（指令索引）
+
+            # if body: return 1
+            ConcreteInstr('LOAD_CONST', 1),  # 1
+            ConcreteInstr('RETURN_VALUE'),
+
+            # else body: return -1
+            ConcreteInstr('LOAD_CONST', 2),  # -1
+            ConcreteInstr('RETURN_VALUE'),
+        ]
+
+        code.extend(instructions)
+
+        # 转换为 code 对象
+        pycode = code.to_code()
+
+        # 构造函数
+        foo = types.FunctionType(pycode, globals())
+
+        # 测试
+        print(foo(10))  # 输出 1
+        print(foo(-5))  # 输出 -1
+        print(dis.cmp_op)
+
+        instr = ConcreteInstr("BINARY_OP", 0)
+        print(instr.size)
+        print(instr.assemble())  # 展示实际生成的字节码
 

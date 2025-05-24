@@ -1,11 +1,4 @@
 from collections import defaultdict
-from ir import ConcreteBytecode, ConcreteInstr
 
-
-def build_vtable(cb: ConcreteBytecode):
-    cb.name = ['defaultdict', 'dict']
-    cb.extend([
-        ConcreteInstr("LOAD_GLOBAL", 0),  # defaultdict
-        ConcreteInstr("LOAD_GLOBAL", 1),  # int
-        ConcreteInstr("CALL", 1),  # defaultdict(int)
-    ])
+def generate_unique_index(first_index: int, second_index: int) -> str:
+    return str(first_index).ljust(10, '0') + str(second_index)

@@ -1,3 +1,4 @@
+import dis
 from unittest import TestCase
 
 from code_gen.byte_code_generator import BytecodeGenerateVisitor
@@ -53,41 +54,63 @@ class Test(TestCase):
     def test_parse_tree(self):
         self.parse_tree(
             """
-            type A = {
-                a: Int,
-                b: String,
-            }
-            
-            def a(b: String, c: (String) -> Unit) -> (Int) -> String{
-            }
-            
-            trait Show(T){
-               def show(t: T) -> String
-            }
-            
-            impl Show for A{
-                def show(t: A) -> String{
-                    return self.name;
-                }
-            }
-            
-            def a(b: impl A, b: impl (A+B)) -> String{
+            #let a = 1;
+            # let b = a.b.c.d + 1 * c()()().a().c.d;
+            if a {
             
             }
-            
-            let a: ((String)->Int, Int) -> (Int) -> String;
-            
-            let a = b.c.d + 1;
-            
-            let a = b.c.d(a.b.c() + a.c) + 1;
-           
-            let b = b().c;
-            
-            let c = A{
-              b = B{
-                 c = 1
-              },
-            };
+            while a >= 1{
+                print(1);
+            }
+            let b = 1;
+            let c = Student{a: 1} + 1 + Student{b: 1};
+            # type Student = {
+            #     name: string
+            # }
+            # let a = Student{
+            #     name: 1
+            # };
+            # 
+            # if Student{
+            #     name: 1
+            # } {
+            # }
+            # 
+            # type A = {
+            #     a: Int,
+            #     b: String,
+            # }
+            # 
+            # def a(b: String, c: (String) -> Unit) -> (Int) -> String{
+            # }
+            # 
+            # trait Show(T){
+            #    def show(t: T) -> String
+            # }
+            # 
+            # impl Show for A{
+            #     def show(t: A) -> String{
+            #         return self.name;
+            #     }
+            # }
+            # 
+            # def a(b: impl A, b: impl (A+B)) -> String{
+            # 
+            # }
+            # 
+            # let a: ((String)->Int, Int) -> (Int) -> String;
+            # 
+            # let a = b.c.d + 1;
+            # 
+            # let a = b.c.d(a.b.c() + a.c) + 1;
+            # 
+            # let b = b().c;
+            # 
+            # let c = A{
+            #   b: B{
+            #      c: 1
+            #   },
+            # };
             """
         ).walk()
 
@@ -279,13 +302,12 @@ class Test(TestCase):
 
     def test_build_symbol(self):
         node = self.test_parse("""
-               let a : Int;
                type Student = {
                    name: String,
                    id: Name
                }
                let a = 1;
-               def fun(b: Int, a: Int): Int{
+               def fun(b: Int, a: Int) -> Int{
                     let c = 1;
                     if a >= 2{
                        let d = 1;
@@ -346,7 +368,7 @@ class Test(TestCase):
         
         impl Write for Student {
             def toString() -> String{
-                if 2 > 1{
+                if 2 + 1{
                     return "1";
                 }elif 43 > 1{
                     let a = 1 + 2;
@@ -361,23 +383,23 @@ class Test(TestCase):
             }
         }
         
-        def echo(t1: impl Write) -> Unit{
-             print(t1.toString());
-        }
+        # def echo(t1: impl Write) -> Unit{
+        #      print(t1.toString());
+        # }
         
-        let f = Function{
-            call = print,
-        };
-        
-        let s = Student{
-                name = "123",
-                f = f
-            };
-        
-        echo(s);
-        
-        f.call("hello world");
-        s.f.call("nihao");
+        # let f = Function{
+        #     call = print,
+        # };
+        # 
+        # let s = Student{
+        #         name = "123",
+        #         f = f
+        #     };
+        # 
+        # echo(s);
+        # 
+        # f.call("hello world");
+        # s.f.call("nihao");
 
         """
 
@@ -435,34 +457,51 @@ class Test(TestCase):
     def test_code_gen(self):
         source = """
 
-        
-        type Student = {
-            name: String,
-            age: Int,
-            id: ID,
-        }
-        
-        type ID = {
-            id: String
-        }
-        impl Write for Student {
-            def toString() -> String{
-                return self.name;
-            }
-        }
-        
-        def test(s: impl Write) -> Unit{
-            echo(s.toString());
-        }
         # 
-        let stu = Student{
-            name = "lily",
-            age = 10,
-            id = ID{
-                id = "20"
-            }
-        };
-        test(stu);
+        # type Student = {
+        #     name: String,
+        #     age: Int,
+        #     id: ID,
+        # }
+        # 
+        # type ID = {
+        #     id: String
+        # }
+        # impl Write for Student {
+        #     def toString() -> String{
+        #         return self.name;
+        #     }
+        # }
+        # 
+        # def test(s: impl Write) -> Unit{
+        #     echo(s.toString());
+        # }
+        # # 
+        # let stu = Student{
+        #     name: "lily",
+        #     age: 10,
+        #     id: ID{
+        #         id: "20"
+        #     }
+        # };
+        # test(stu);
+        # let b: Int;
+        # if 2 > 1{
+        #     b = 1 + 1;
+        #     echo(b);
+        # }
+        # 
+        # if b == 1{
+        #     echo("456");
+        # }
+        # let c = 1;
+        let b = 3;
+        while b >= 1{
+            b = b - 1;
+            echo(b);
+            echo("loop");
+        }
+        # echo("loop-end");
         """
         from collections import defaultdict
 
@@ -472,8 +511,9 @@ class Test(TestCase):
         # print('varnames:', bytecode_obj.varnames)
         # print('consts:', bytecode_obj.consts)
         # print('global', bytecode_obj.names)
-        # for instr in bytecode_obj:
-        #     print(instr)
+        for i, instr in enumerate(bytecode_obj):
+            print(i, instr)
+        dis.dis(bytecode_obj.to_code())
         exec(bytecode_obj.to_code(), {'defaultdict': defaultdict})
 
     def test_man(self):

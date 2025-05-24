@@ -16,4 +16,10 @@ a.b.c()
 
 a.b.c
 
+if Student{
+    a=b,
+}   {
+
+}
+
 """

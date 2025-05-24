@@ -59,8 +59,8 @@ def parse_dict(lexer: Lexer):
 def parse_data_init(lexer: Lexer):
     type_node = parse_type(lexer)
     lexer.expect_pop("{")
-    body = RepeatParser(",", "}").parse(lexer, parse_assign)
-    return DataInitNode(type_node, body)
+    body = RepeatParser(",", "}").parse(lexer, combiner(parse_var, drop(":"), parse_expr))
+    return DataInitNode(type_node, [AssignNode(var, expr) for var, expr in body])
 
 
 def parse_expr_unit(lexer: Lexer):
@@ -79,36 +79,26 @@ def parse_expr_unit(lexer: Lexer):
     lexer.expect('float', 'int', 'string', 'id', 'self')
     token = lexer.peek()
     if token.token_type == "id" or token.token_type == "self":
-        if token.token_type == "id":
-            node = VarNode(parse_identifier(lexer))
-        elif token.token_type == "self":
-            token = lexer.pop()
-            id_node = IdNode("self")
-            id_node.start_pos = token.start_pos
-            id_node.end_pos = token.end_pos
-            node = VarNode(id_node, True)
-        else:
-            utils.died_branch()
+        node = VarNode(parse_identifier(lexer))
+        node.is_self = token.token_type == "self"
+        # need to check whether a struct init expr like
         if lexer.try_peek("{"):
-            lexer.unpop()
-            return parse_data_init(lexer)
-        while True:
-            if lexer.peek().token_type not in ('.', '(', '['):
-               return node
-            if lexer.try_peek("("):
-                lexer.pop()
-                node = FunctionCallNode(node, RepeatParser(",", ")").parse(lexer, parse_expr))
-            elif lexer.try_peek("["):
-                lexer.pop()
-                # return parse_index(token, lexer)
-            elif lexer.try_peek("."):
-                lexer.pop()
-                node = AttributeNode(node, parse_identifier(lexer))
+            lexer.pop()
+            if lexer.try_peek("}"):
+                lexer.unpop() # return to {
+                return node
+                # if a{} then {} should b a block
             else:
-                id_node = IdNode(token.text)
-                id_node.start_pos = token.start_pos
-                id_node.end_pos = token.end_pos
-                return VarNode(id_node)
+                # if a{x:} then should a struct init expr
+                if lexer.try_peek("id"):
+                    lexer.pop()
+                    if lexer.try_peek(":"):
+                        lexer.unpop()
+                        lexer.unpop()
+                        lexer.unpop()
+                    return parse_data_init(lexer)
+                # otherwise should be a {xxxx}, {xxx} should b a block
+        return node
     else:
         lexer.pop()
         lit = LiteralNode(token.text, token.token_type.capitalize())
@@ -118,7 +108,7 @@ def parse_expr_unit(lexer: Lexer):
 
 
 def parse_identifier(lexer: Lexer):
-    token = lexer.expect_pop("id")
+    token = lexer.expect_pop("id", "self")
     id = IdNode(token.text)
     id.start_pos = token.start_pos
     id.end_pos = token.end_pos
@@ -220,14 +210,29 @@ def parse_add(lexer: Lexer) -> Optional[ASTNode]:
         left = node
     return left
 
-def parse_mul(lexer: Lexer) -> Optional[ASTNode]:
+def parse_attr(lexer: Lexer) -> Optional[ASTNode]:
     left = parse_expr_unit(lexer)
+    while True:
+        if lexer.peek().token_type not in ('.', '[', '('):
+            break
+        if lexer.try_peek("."):
+            lexer.pop()
+            node = AttributeNode(left, parse_identifier(lexer))
+            left = node
+        elif lexer.try_peek("("):
+            lexer.pop()
+            node = FunctionCallNode(left, RepeatParser(",", ")").parse(lexer, parse_expr))
+            left = node
+    return left
+
+def parse_mul(lexer: Lexer) -> Optional[ASTNode]:
+    left = parse_attr(lexer)
     while True:
         if lexer.peek().token_type not in ('*', '/'):
             break
         node = BinaryOpNode(lexer.peek().token_type)
         lexer.pop()
-        right = parse_expr_unit(lexer)
+        right = parse_attr(lexer)
         node.left = left
         node.right = right
         left = node

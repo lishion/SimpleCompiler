@@ -100,6 +100,11 @@ class Visitor(ABC):
     def visit_type_constraint(self, node: 'TraitConstraintNode'):
         pass
 
+    def visit_if_statement(self, node: 'IfStatement'):
+        pass
+
+    def visit_loop_statement(self, node: 'LoopStatement'):
+        pass
 
 class PositionVisitor(Visitor):
 
@@ -140,6 +145,7 @@ class PositionVisitor(Visitor):
             statement.accept(self)
         if node.else_branch:
             node.end_pos = node.else_branch.accept(self)[1]
+        return node.start_pos, node.end_pos
 
     def visit_loop(self, node: 'LoopStatement'):
         return 0, 0
@@ -611,8 +617,9 @@ class ReferenceResolveVisitor(Visitor):
         return call_source_type.return_type
 
     def visit_if(self, node: 'IfStatement'):
-
         for branch, body in node.branches:
+            if (condition_type := branch.accept(self)) != Type(VarType.Bool.value):
+                raise TypeError(f"expect type 'Bool', but got '{condition_type}'\n" + self.error_reporter.mark(branch))
             if self.expect_return_type and not body.accept(self):
                 raise UndefinedError("missing return statement in branch\n" + self.error_reporter.mark(branch, context_node=node))
         if node.else_branch:

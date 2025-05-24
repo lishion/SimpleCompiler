@@ -2,12 +2,14 @@ from typing import List, Tuple, Any
 
 from bytecode import ConcreteBytecode, ConcreteInstr
 
+from code_gen.utils import generate_unique_index
 from parser.node import LiteralNode, VarNode, AssignNode, BinaryOpNode, ProcNode, FuncDefNode, FunctionCallNode, \
-    BlockNode, ReturnNode, VarDefNode, DataInitNode, AttributeNode, TraitImplNode
+    BlockNode, ReturnNode, VarDefNode, DataInitNode, AttributeNode, TraitImplNode, IfStatement, LoopStatement
 from parser.types import VarType
 from parser.visitor import Visitor
 from dataclasses import dataclass, field
-from code_gen.ir import CodeRepr, ByteCodes, ConcreteBytecodeConverter, Comment, repr_to_bytecode
+from bytecode.instr import Compare
+from code_gen.ir import CodeRepr, ByteCodes, ConcreteBytecodeConverter, Comment, repr_to_bytecode, Label
 from bytecode.instr import BinaryOp
 
 
@@ -62,11 +64,31 @@ BINARY_OP_MAP = {
     '>>': 9,
     '-': 10,
     '/': 11,
-    '^': 12,
+    '^': 12
+}
+
+COMPARE_OP_MAP = {
+    "<": 0 << 4,
+    "<=": 1 << 4,
+    "==": 2 << 4,
+    "!=": 3 << 4,
+    ">": 4 << 4,
+    ">=": 5 << 4,
+    "in": 6,
+    "not in": 7,
+    "is": 8,
+    "is not": 9,
+    "exception match": 10,
+    "BAD": 11
 }
 
 
 class BytecodeGenerateVisitor(Visitor):
+
+
+    def __init__(self):
+        self._current_if_statement_index = -1
+        self._current_loop_statement_index = -1
 
     def visit_lit(self, node: 'LiteralNode'):
         match VarType(node.literal_type):
@@ -81,7 +103,13 @@ class BytecodeGenerateVisitor(Visitor):
         res = []
         res += node.left.accept(self)
         res += node.right.accept(self)
-        res.append(CodeRepr(ByteCodes.BINARY_OP, BINARY_OP_MAP[node.op]))
+        if node.op in BINARY_OP_MAP:
+            res.append(CodeRepr(ByteCodes.BINARY_OP, op_num=BINARY_OP_MAP[node.op]))
+        elif node.op in COMPARE_OP_MAP:
+            res.append(CodeRepr(ByteCodes.COMPARE_OP, op_num=COMPARE_OP_MAP[node.op]))
+        else:
+            raise ValueError("unknown op %s" % node.op)
+        return res
 
 
     def visit_var(self, node: 'VarNode'):
@@ -150,6 +178,7 @@ class BytecodeGenerateVisitor(Visitor):
         for i, arg in enumerate(node.args):
             res += arg.accept(self)
         res.append(CodeRepr(ByteCodes.CALL, op_num=(len(node.args) + 1 if is_trait else len(node.args))))
+        res.append(CodeRepr(ByteCodes.POP_TOP))
         res.append(Comment(f"==function call end"))
         return res
 
@@ -318,5 +347,34 @@ class BytecodeGenerateVisitor(Visitor):
             res += node.accept(self)
         return res
 
+    def visit_if(self, node: 'IfStatement'):
+        res = []
+        self._current_if_statement_index += 1
+        if_index = self._current_if_statement_index
+        single_if = len(node.branches) and not node.else_branch
+        for index, v in enumerate(node.branches):
+            condition, body = v
+            res.append(Label(if_index, str(index)))
+            res += condition.accept(self)
+            res.append(CodeRepr(ByteCodes.POP_JUMP_IF_FALSE, label = Label(if_index, str(index + 1))))
+            res += body.accept(self)
+            # jump to end if there is another branch/else
+            single_if or res.append(CodeRepr(ByteCodes.JUMP_FORWARD, label = Label(if_index, 'end')))
+        res.append(Label(if_index, str(index + 1)))
+        if node.else_branch:
+            res += node.else_branch.accept(self)
+        res.append(Label(if_index, 'end'))
+        res.append(CodeRepr(ByteCodes.RETURN_CONST, null_const=True))
+        return res
 
-
+    def visit_loop_statement(self, node: 'LoopStatement'):
+        self._current_if_statement_index += 1
+        loop_index = self._current_if_statement_index
+        res: List[Label|CodeRepr] = [Label(loop_index, 'loop_start')]
+        res += node.condition.accept(self)
+        res.append(CodeRepr(ByteCodes.POP_JUMP_IF_FALSE, label=Label(loop_index, 'loop_end')))
+        res += node.body.accept(self)
+        res.append(CodeRepr(ByteCodes.JUMP_BACKWARD, label=Label(loop_index, 'loop_start')))
+        res.append(Label(loop_index, 'loop_end'))
+        res.append(CodeRepr(ByteCodes.RETURN_CONST, null_const=True))
+        return res

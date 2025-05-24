@@ -257,9 +257,8 @@ class LoopStatement(ASTNode):
         self.condition = condition
         self.body = body
 
-    def eval(self) -> Any:
-        while self.condition.eval():
-            self.body.eval()
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_loop_statement(self)
 
 class TypeDefNode(ASTNode):
     def __init__(self, type_name: IdNode, type_def: List[Tuple[IdNode, TypeNode]]):
@@ -267,8 +266,7 @@ class TypeDefNode(ASTNode):
         self.type_name = type_name
         self.type_def = type_def
 
-    def eval(self) -> Any:
-        return None
+
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_type_def(self)
 

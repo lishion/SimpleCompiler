@@ -9,6 +9,7 @@ class VarType(Enum):
     String = "String"
     Bool = "Bool"
     Unit = "Unit"
+    Any = "Any"
 
 
 def is_primitive(name: str) -> bool:
