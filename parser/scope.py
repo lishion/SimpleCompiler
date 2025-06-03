@@ -165,4 +165,5 @@ class ScopeManager:
         return self.enter()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        return self.exit()
+        self.exit()
+        return False

@@ -121,7 +121,7 @@ class ConcreteBytecodeConverter:
             return code_repr # do not process jup cmd here, will handle in next round
         if code_repr.null_const:
             op_num = self.add_const(None)
-        elif code_repr.const:
+        elif code_repr.const is not None:
             op_num = self.add_const(code_repr.const)
         elif code_repr.name:
             op_num = self.add_name(code_repr.name)

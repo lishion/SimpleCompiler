@@ -4,7 +4,8 @@ from bytecode import ConcreteBytecode, ConcreteInstr
 
 from code_gen.utils import generate_unique_index
 from parser.node import LiteralNode, VarNode, AssignNode, BinaryOpNode, ProcNode, FuncDefNode, FunctionCallNode, \
-    BlockNode, ReturnNode, VarDefNode, DataInitNode, AttributeNode, TraitImplNode, IfStatement, LoopStatement
+    BlockNode, ReturnNode, VarDefNode, DataInitNode, AttributeNode, TraitImplNode, IfStatement, LoopStatement, \
+    ContinueOrBreak
 from parser.types import VarType
 from parser.visitor import Visitor
 from dataclasses import dataclass, field
@@ -94,9 +95,10 @@ class BytecodeGenerateVisitor(Visitor):
         match VarType(node.literal_type):
             case VarType.Float: val = float(node.val)
             case VarType.Int: val = int(node.val)
-            case VarType.Bool: val = bool(node.val)
+            case VarType.Bool if node.val == "true": val = True
+            case VarType.Bool if node.val == "false": val = False
             case VarType.String: val = node.val[1: -1]
-            case _: val = node.val
+            case _: raise Exception(f"unknown literal type {node.val}")
         return [CodeRepr(ByteCodes.LOAD_CONST, const=val)]
 
     def visit_bin_op(self, node: 'BinaryOpNode'):
@@ -154,6 +156,7 @@ class BytecodeGenerateVisitor(Visitor):
         for statement in node.children:
             if r := statement.accept(self):
                 res += r
+        res.append(CodeRepr(ByteCodes.RETURN_CONST, null_const=True))
         return ConcreteBytecodeConverter(res).show().convert()
 
     def visit_block(self, node: 'BlockNode'):
@@ -181,9 +184,6 @@ class BytecodeGenerateVisitor(Visitor):
         res.append(CodeRepr(ByteCodes.POP_TOP))
         res.append(Comment(f"==function call end"))
         return res
-
-    def visit_if(self, node: 'IfStatement'):
-        pass
 
     def visit_loop(self, node: 'LoopStatement'):
         pass
@@ -348,7 +348,9 @@ class BytecodeGenerateVisitor(Visitor):
         return res
 
     def visit_if(self, node: 'IfStatement'):
-        res = []
+        res: List[CodeRepr|Comment|Label] = [
+            Comment("if statement start")
+        ]
         self._current_if_statement_index += 1
         if_index = self._current_if_statement_index
         single_if = len(node.branches) and not node.else_branch
@@ -364,17 +366,30 @@ class BytecodeGenerateVisitor(Visitor):
         if node.else_branch:
             res += node.else_branch.accept(self)
         res.append(Label(if_index, 'end'))
-        res.append(CodeRepr(ByteCodes.RETURN_CONST, null_const=True))
+        # res.append(CodeRepr(ByteCodes.RETURN_CONST, null_const=True))
+        res.append(Comment("if statement end"))
         return res
 
-    def visit_loop_statement(self, node: 'LoopStatement'):
+    def visit_loop(self, node: 'LoopStatement'):
         self._current_if_statement_index += 1
         loop_index = self._current_if_statement_index
-        res: List[Label|CodeRepr] = [Label(loop_index, 'loop_start')]
+        res: List[Label|CodeRepr] = [Comment("while statement start"), Label(loop_index, 'loop_start')]
         res += node.condition.accept(self)
         res.append(CodeRepr(ByteCodes.POP_JUMP_IF_FALSE, label=Label(loop_index, 'loop_end')))
-        res += node.body.accept(self)
+        undecided_cmd: List[CodeRepr] = node.body.accept(self)
+        for cmd in undecided_cmd:
+            match cmd:
+                case CodeRepr(op_name=op_name, label=label) if label and label.global_index == -1:
+                    new_cmd = CodeRepr(op_name, label=Label(loop_index, label.local_index))
+                case _:
+                    new_cmd = cmd
+            res.append(new_cmd)
         res.append(CodeRepr(ByteCodes.JUMP_BACKWARD, label=Label(loop_index, 'loop_start')))
         res.append(Label(loop_index, 'loop_end'))
         res.append(CodeRepr(ByteCodes.RETURN_CONST, null_const=True))
         return res
+
+    def visit_continue_or_break(self, node: 'ContinueOrBreak'):
+        if node.kind == "continue":
+            return [CodeRepr(ByteCodes.JUMP_BACKWARD, label=Label(-1, 'loop_start'))]
+        return [CodeRepr(ByteCodes.JUMP_FORWARD, label=Label(-1, 'loop_end'))]

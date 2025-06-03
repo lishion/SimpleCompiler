@@ -1,9 +1,9 @@
 """
 
-trait Show(T){
-    def show(self: T) -> String
+trait Show<T>(Self){
+    def show(self: Self) -> String
 }
-
+gvb
 impl Show for Student{
     def show(self: Student) -> String
 }
@@ -21,5 +21,14 @@ if Student{
 }   {
 
 }
+
+type Student<T>{
+    a: List<T>
+
+let b: Student<List<Int>> = Student{
+    a: [Int]
+}
+
+let x:
 
 """

@@ -12,7 +12,7 @@ from parser.visitor import SymbolVisitor, ReferenceResolveVisitor, EvalVisitor, 
 from parser.utils import init_global_scope
 from error.reporter import SourceCodeMaker, ErrorReporter
 from runtime.data import MetaManager
-from runtime import *
+
 
 class Test(TestCase):
 
@@ -64,9 +64,13 @@ class Test(TestCase):
             }
             let b = 1;
             let c = Student{a: 1} + 1 + Student{b: 1};
-            # type Student = {
-            #     name: string
-            # }
+            type Student = {
+                name: string
+            }
+            type Student<T> = {
+                name: string,
+                id: T
+            }
             # let a = Student{
             #     name: 1
             # };
@@ -456,7 +460,6 @@ class Test(TestCase):
 
     def test_code_gen(self):
         source = """
-
         # 
         # type Student = {
         #     name: String,
@@ -495,11 +498,16 @@ class Test(TestCase):
         #     echo("456");
         # }
         # let c = 1;
-        let b = 3;
-        while b >= 1{
-            b = b - 1;
-            echo(b);
+        let b = 6;
+        while false{
+            if b >= 3{
+                b = b - 1;
+                echo(b);
+                continue;
+            }
             echo("loop");
+            break;
+            echo("after break");
         }
         # echo("loop-end");
         """
@@ -511,59 +519,21 @@ class Test(TestCase):
         # print('varnames:', bytecode_obj.varnames)
         # print('consts:', bytecode_obj.consts)
         # print('global', bytecode_obj.names)
-        for i, instr in enumerate(bytecode_obj):
-            print(i, instr)
+        # for i, instr in enumerate(bytecode_obj):
+        #     print(i, instr)
         dis.dis(bytecode_obj.to_code())
         exec(bytecode_obj.to_code(), {'defaultdict': defaultdict})
 
-    def test_man(self):
-        import dis
-        def innert():
-            a = {
-                "a": 1,
-                "b": "s"
+    def test_generic_type(self):
+        node, scope_manager = self.test_parse("""
+            type Container<T> = {
+                item: T,
+                next: Container<Container<T>>
             }
-            return  a
-        dis.dis(innert)
-        # from bytecode import ConcreteBytecode, ConcreteInstr
-        # import types
-        #
-        # cb = ConcreteBytecode()
-        #
-        # # 变量 a
-        # cb.varnames = ["a"]
-        # cb.consts = [1, 2, ("a", "b"), None]  # 注意 None 也需要
-        # cb.names = []
-        # cb.name = "<module>"
-        # cb.filename = "<string>"
-        # cb.argcount = 0
-        # cb.flags = 0
-        #
-        # cb.extend([
-        #     # 加载常量值 1 和 2
-        #     ConcreteInstr("LOAD_CONST", 0),  # 1
-        #     ConcreteInstr("LOAD_CONST", 1),  # 2
-        #
-        #     # 构建 value 列表 [1, 2]
-        #     ConcreteInstr("BUILD_LIST", 2),
-        #
-        #     # 加载 keys tuple ("a", "b")
-        #     ConcreteInstr("LOAD_CONST", 2),
-        #
-        #     # 构建 dict {"a": 1, "b": 2}
-        #     ConcreteInstr("BUILD_CONST_KEY_MAP", 2),
-        #
-        #     # 存储到变量 a
-        #     ConcreteInstr("STORE_FAST", 0),
-        #
-        #     # 返回 None
-        #     ConcreteInstr("LOAD_CONST", 3),
-        #     ConcreteInstr("RETURN_VALUE"),
-        # ])
-        #
-        # # 转换为可执行 code 对象
-        # code_obj = cb.to_code()
-        #
-        # # 创建函数并执行
-        # f = types.FunctionType(code_obj, {})
-        # f()
+            # let c = Container{ item: "a", item2: B{a: "xxx"}};
+        """)
+        node.walk()
+        # scope_manager = ScopeManager(init_global_scope(scope_manager))
+        # SymbolVisitor(scope_manager).visit_proc(node)
+        # ReferenceResolveVisitor().visit_proc(node)
+        # EvalVisitor(scope_manager.global_scope).visit_proc(node)

@@ -92,7 +92,11 @@ class BinaryOpNode(ASTNode):
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_bin_op(self)
 
+    def __str__(self):
+        return f"{self.left} {self.op} {self.right}"
 
+    def __repr__(self):
+        return self.__str__()
 
 class IdNode(ASTNode):
 
@@ -111,6 +115,11 @@ class VarNode(ASTNode):
         self.identifier = identifier
         self.is_self = is_self
 
+    def __str__(self):
+        return f"{self.identifier.name}"
+
+    def __expr__(self):
+        return self.__expr__()
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_var(self)
@@ -132,28 +141,33 @@ class LiteralNode(ASTNode):
         self.val = val
         self.literal_type = literal_type
 
-    def eval(self) -> Any:
-        if self.literal_type == "int":
-            return int(self.val)
-        if self.literal_type == "float":
-            return float(self.val)
-        if self.literal_type == "string":
-            return self.val
-        return self.val
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_lit(self)
 
+    def __str__(self):
+        return f"{self.val}"
+
+    def __repr__(self):
+        return self.__str__()
+
+class TypeVarNode(ASTNode):
+
+    def __init__(self, identifier: IdNode, constraints: List['TraitNode']=None):
+        super().__init__("type_var")
+        self.identifier = identifier
+        self.constraints: List['TraitNode'] = constraints or []
+
+    def accept(self, visitor: 'Visitor'):
+        visitor.visit_type_var(self)
 
 
 class TypeNode(ASTNode):
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, type_parameters: List['TypeVarNode|TypeNode']=None):
         super().__init__("type")
         self.name = name
-
-    def eval(self) -> Any:
-        return None
+        self.type_parameters = type_parameters
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_type(self)
@@ -176,13 +190,6 @@ class BlockNode(ASTNode):
     def __init__(self, stmts: List[ASTNode]):
         super().__init__("stmt")
         self.stmts = stmts
-
-    def eval(self) -> Any:
-        res = None
-        for child in self.stmts:
-           res = child.eval()
-        return res
-
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_block(self)
@@ -226,11 +233,6 @@ class LitArrayNode(ASTNode):
         super().__init__("lit_array")
         self.args = args
 
-    def eval(self) -> Any:
-        return list((x.eval() for x in self.args))
-
-
-
 class LitDictNode(ASTNode):
 
     def __init__(self, args: List[Tuple[ASTNode, ASTNode]]):
@@ -252,19 +254,31 @@ class IfStatement(ASTNode):
         return visitor.visit_if(self)
 
 class LoopStatement(ASTNode):
-    def __init__(self, condition: ASTNode, body: ASTNode):
+    def __init__(self, condition: ASTNode, body: BlockNode):
         super().__init__("loop_stmt")
         self.condition = condition
         self.body = body
 
     def accept(self, visitor: 'Visitor'):
-        return visitor.visit_loop_statement(self)
+        return visitor.visit_loop(self)
+
+class TypeAnnotationNode(ASTNode):
+
+    def __init__(self, name: str, type_parameters: List['TypeVarNode']=None):
+        super().__init__("type_annotation")
+        self.name = name
+        self.type_parameters = type_parameters
+
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_type_annotation(self)
+
 
 class TypeDefNode(ASTNode):
-    def __init__(self, type_name: IdNode, type_def: List[Tuple[IdNode, TypeNode]]):
+    def __init__(self, type_node: TypeAnnotationNode, type_def: List[Tuple[IdNode, TypeNode]], generic_type: 'GenericTypeNode'=None):
         super().__init__("type_def")
-        self.type_name = type_name
+        self.type_node = type_node
         self.type_def = type_def
+        self.generic_type = generic_type
 
 
     def accept(self, visitor: 'Visitor'):
@@ -393,3 +407,20 @@ class AttributeNode(ASTNode):
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_attribute(self)
+
+class ContinueOrBreak(ASTNode):
+
+    def __init__(self, kind: str):
+        super().__init__("")
+        self.kind = kind
+
+    def accept(self, visitor: 'Visitor'):
+        return visitor.visit_continue_or_break(self)
+
+class TypeParameters(ASTNode):
+    def __init__(self, type_vars: List[TypeVarNode]):
+        super().__init__()
+        self.type_var = type_vars
+
+    def accept(self, visitor: 'Visitor'):
+        visitor.visit_generic_type(self)

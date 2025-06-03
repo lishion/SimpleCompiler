@@ -50,10 +50,11 @@ class VarSymbol(Symbol):
         self.var_type = var_type
 
 class TypeSymbol(Symbol):
-    def __init__(self, name, type_def: StructureType=None, type_def_ast: 'TypeDefNode'=None,):
+    def __init__(self, name, type_def: StructureType=None, type_def_ast: 'TypeDefNode'=None, is_var=False):
         super().__init__(name, Symbols.Type)
         self.type_def = type_def or Type(name)
         self.type_def_ast = type_def_ast
+        self.is_var = is_var
 
 
 @dataclass

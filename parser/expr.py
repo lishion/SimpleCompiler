@@ -3,7 +3,8 @@ from parser import utils
 from parser.node import ASTNode, BinaryOpNode, LiteralNode, BlockNode, FunctionCallNode, IdNode, IndexNode, \
     LitArrayNode, LitDictNode, IfStatement, LoopStatement, FuncDefNode, ProcNode, AssignNode, VarDefNode, \
     TypeNode, TypeDefNode, VarNode, Nothing, ReturnNode, DataInitNode, FunctionTypeNode, TraitNode, TraitDefNode, \
-    TraitFunctionNode, TraitImplNode, TraitConstraintNode, AttributeNode
+    TraitFunctionNode, TraitImplNode, TraitConstraintNode, AttributeNode, ContinueOrBreak, TypeVarNode, \
+    TypeAnnotationNode
 from lexer.lexer import Lexer
 from typing import Optional, List
 from parser.utils import RepeatParser, combiner
@@ -76,7 +77,7 @@ def parse_expr_unit(lexer: Lexer):
         return parse_array(lexer)
     elif lexer.peek().token_type == "{":
         return parse_dict(lexer)
-    lexer.expect('float', 'int', 'string', 'id', 'self')
+    lexer.expect('float', 'int', 'string', 'id', 'self', 'true', 'false')
     token = lexer.peek()
     if token.token_type == "id" or token.token_type == "self":
         node = VarNode(parse_identifier(lexer))
@@ -101,7 +102,7 @@ def parse_expr_unit(lexer: Lexer):
         return node
     else:
         lexer.pop()
-        lit = LiteralNode(token.text, token.token_type.capitalize())
+        lit = LiteralNode(token.text, 'Bool' if token.token_type in ('true', 'false') else token.token_type.capitalize())
         lit.start_pos = token.start_pos
         lit.end_pos = token.end_pos
         return lit
@@ -117,24 +118,36 @@ def parse_identifier(lexer: Lexer):
 def parse_var(lexer: Lexer):
     return VarNode(parse_identifier(lexer))
 
-def parse_type(lexer: Lexer):
-    if lexer.try_peek("("):
+def parse_type(lexer: Lexer, is_type_def=False):
+    if not is_type_def and lexer.try_peek("("):
         return parse_function_type(lexer)
     token = lexer.expect_pop("id")
     type_node = TypeNode(token.text)
     type_node.start_pos = token.start_pos
     type_node.end_pos = token.end_pos
+    if lexer.try_peek("<"):
+        lexer.pop()
+        if is_type_def:
+            type_vars = RepeatParser(',', end='>').parse(lexer, parse_type_var)
+            type_node.type_parameters = type_vars
+        else:
+            type_vars = RepeatParser(',', end='>').parse(lexer, parse_type)
+            type_node.type_parameters = type_vars
     return type_node
+
+def parse_trait_list(lexer: Lexer) -> List['TraitNode']:
+    if lexer.try_peek("("):
+        lexer.pop()
+        traits: List['TraitNode'] = RepeatParser("+", ")").parse(lexer, parse_trait)
+    else:
+        traits = [parse_trait(lexer)]
+    return traits
 
 
 def parse_trait_constraint(lexer: Lexer):
     lexer.expect_pop("impl")
-    if lexer.try_peek("("):
-        lexer.pop()
-        traits = RepeatParser("+", ")").parse(lexer, parse_trait)
-    else:
-        traits = [parse_trait(lexer)]
-    return TraitConstraintNode(traits)
+    return TraitConstraintNode(parse_trait_list(lexer))
+
 
 
 def parse_function_arg_type(lexer: Lexer):
@@ -256,7 +269,12 @@ def parse_assign(lexer: Lexer) -> AssignNode:
     return AssignNode(var, expr)
 
 def parse_return(lexer: Lexer) -> ASTNode:
-    lexer.expect_pop("return")
+    t = lexer.expect_pop("return")
+    if lexer.try_peek(";"):
+        res = ReturnNode(None)
+        res.start_pos = t.start_pos
+        res.end_pos = t.end_pos
+        return res
     return ReturnNode(parse_expr(lexer))
 
 def parse_function_type(lexer: Lexer) -> FunctionTypeNode:
@@ -268,7 +286,7 @@ def parse_function_type(lexer: Lexer) -> FunctionTypeNode:
 
 
 
-def parse_stmt(lexer: Lexer, inside_function=False) -> Optional[ASTNode]:
+def parse_stmt(lexer: Lexer) -> Optional[ASTNode]:
     match lexer.peek().token_type:
         case "if":
             node = parse_if_stmt(lexer)
@@ -291,18 +309,26 @@ def parse_stmt(lexer: Lexer, inside_function=False) -> Optional[ASTNode]:
         case "return":
             node = parse_return(lexer)
             lexer.expect_pop(";")
+        case "break"|"continue":
+            t = lexer.pop()
+            node = ContinueOrBreak(t.text)
+            node.start_pos = t.start_pos
+            node.end_pos = t.end_pos
+            lexer.expect_pop(";")
         case _:
-            return None
+            raise ValueError(f"Unexpected token {lexer.peek().token_type}")
     return node
 
-def parse_block(lexer: Lexer, inside_function=False) -> Optional[BlockNode]:
+
+
+def parse_block(lexer: Lexer) -> Optional[BlockNode]:
     lexer.expect_pop("{")
     node = BlockNode([])
     if lexer.try_peek("}"):
         lexer.pop()
         return node
     while True:
-        node.stmts.append(parse_stmt(lexer, inside_function))
+        node.stmts.append(parse_stmt(lexer))
         if lexer.try_peek("}"):
             lexer.pop()
             break
@@ -340,7 +366,7 @@ def parse_func_def(lexer: Lexer, trait_node: TraitImplNode=None) -> FuncDefNode:
     args = RepeatParser(",", ")").parse(lexer, combiner(parse_identifier, drop(":"), parse_function_arg_type))
     lexer.expect_pop("->")
     return_type = parse_function_arg_type(lexer)
-    body = parse_block(lexer, True)
+    body = parse_block(lexer)
     return FuncDefNode(function_name, [VarDefNode(id, type) for id, type in args], body, return_type, trait_node)
 
 def parse_var_def(lexer: Lexer):
@@ -359,13 +385,24 @@ def parse_var_def(lexer: Lexer):
         init_node = parse_or(lexer)
     return VarDefNode(id_node, type_node, init_node)
 
+def parse_type_annotation(lexer: Lexer) -> TypeAnnotationNode:
+    token = lexer.expect_pop("id")
+    type_node = TypeAnnotationNode(token.text)
+    type_node.start_pos = token.start_pos
+    type_node.end_pos = token.end_pos
+    if lexer.try_peek("<"):
+        lexer.pop()
+        type_vars = RepeatParser(',', end='>').parse(lexer, parse_type_var)
+        type_node.type_parameters = type_vars
+    return type_node
+
 def parse_type_def(lexer: Lexer) -> TypeDefNode:
     lexer.expect_pop("type")
-    type_name = parse_identifier(lexer)
+    type_node = parse_type_annotation(lexer)
     lexer.expect_pop("=")
     lexer.expect_pop("{")
     type_def = RepeatParser(",", "}").parse(lexer, combiner(parse_identifier, drop(":"), parse_type))
-    return TypeDefNode(type_name, type_def)
+    return TypeDefNode(type_node, type_def)
 
 def parse_trait(lexer: Lexer) -> TraitNode:
     id = parse_identifier(lexer)
@@ -431,3 +468,16 @@ def parse_proc(lexer: Lexer) -> ProcNode:
                node = parse_stmt(lexer)
         proc_node.children.append(node)
     return proc_node
+
+def parse_type_var(lexer: Lexer) -> TypeVarNode:
+    id_node = parse_identifier(lexer)
+    if lexer.try_peek(":"):
+        lexer.expect_pop(":")
+        constraints = parse_trait_list(lexer)
+        return TypeVarNode(id_node, constraints)
+    return TypeVarNode(id_node)
+
+
+# def parse_generic_type(lexer: Lexer) -> GenericTypeNode:
+#     lexer.expect_pop("<")
+#     RepeatParser(",", ">").parse(lexer, parse_type)

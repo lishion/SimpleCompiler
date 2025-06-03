@@ -1,16 +1,16 @@
 from code_gen.indent import PythonCodeGenerator
 from error.exception import UndefinedError, DuplicateDefineError, TypeConstraintError, TypeError
-from parser.stack import StackFrame, Stack
-from parser.symbol import VarSymbol, TypeSymbol, FunctionSymbol, Symbol, TBDSymbol, FunctionOverloadSymbol, TraitSymbol
+from parser.stack import Stack
+from parser.symbol import VarSymbol, TypeSymbol, FunctionSymbol, Symbol, TBDSymbol, TraitSymbol
 from parser.node import *
 from abc import ABC, abstractmethod
-from parser.types import VarType, FunctionSignature, Type, BaseType, StructureType, TraitConstraintsType, UNIT
-from error.reporter import LineMaker, ErrorReporter
-from parser import utils, types
-from parser.utils import indent
+from parser.types import VarType, FunctionSignature, Type, BaseType, TraitConstraintsType, UNIT, TypeVar
+from error.reporter import ErrorReporter
+from parser import utils
+
 from runtime.data import MetaManager, DataMeta
 from itertools import zip_longest
-import textwrap
+
 
 @abstractmethod
 class Visitor(ABC):
@@ -100,10 +100,16 @@ class Visitor(ABC):
     def visit_type_constraint(self, node: 'TraitConstraintNode'):
         pass
 
-    def visit_if_statement(self, node: 'IfStatement'):
+    def visit_continue_or_break(self, node: 'ContinueOrBreak'):
         pass
 
-    def visit_loop_statement(self, node: 'LoopStatement'):
+    def visit_generic_type(self, node: 'GenericTypeNode'):
+        pass
+
+    def visit_type_var(self, node: 'TypeVarNode'):
+        pass
+
+    def visit_type_annotation(self, node: 'TypeAnnotationNode'):
         pass
 
 class PositionVisitor(Visitor):
@@ -148,7 +154,10 @@ class PositionVisitor(Visitor):
         return node.start_pos, node.end_pos
 
     def visit_loop(self, node: 'LoopStatement'):
-        return 0, 0
+        s1, e1 =  node.condition.accept(self)
+        s2, e2 = node.body.accept(self)
+        node.start_pos, node.end_pos = s1, e2
+        return node.start_pos, node.end_pos
 
     def visit_func_def(self, node: 'FuncDefNode'):
         node.start_pos, node.end_pos = node.name.accept(self)
@@ -176,13 +185,14 @@ class PositionVisitor(Visitor):
         return node.start_pos, node.end_pos
 
     def visit_type_def(self, node: 'TypeDefNode'):
-        start_pos = node.type_name.accept(self)[0]
+        start_pos = node.type_node.accept(self)[0]
         end_pos = [(name.accept(self), d.accept(self)) for name, d in node.type_def]
         node.start_pos, node.end_pos = start_pos, end_pos[-1][1]
         return node.start_pos, node.end_pos
 
     def visit_return(self, node: 'ReturnNode'):
-        node.start_pos, node.end_pos = node.expr.accept(self)
+        if node.expr:
+            _, node.end_pos = node.expr.accept(self)
         return node.start_pos, node.end_pos
 
     def visit_identifier(self, node: 'IdNode'):
@@ -239,6 +249,13 @@ class PositionVisitor(Visitor):
         node.end_pos = node.traits[-1].accept(self)[1]
         return node.start_pos, node.end_pos
 
+    def visit_continue_or_break(self, node: 'ContinueOrBreak'):
+        return node.start_pos, node.end_pos
+
+    def visit_type_annotation(self, node: 'TypeAnnotationNode'):
+        return node.start_pos, node.end_pos
+
+
 
 
 class SymbolVisitor(Visitor):
@@ -246,6 +263,8 @@ class SymbolVisitor(Visitor):
     def __init__(self, scope_manager: 'ScopeManager', reporter: ErrorReporter):
         self.scope_manager = scope_manager
         self.reporter = reporter
+        self.inside_function = False
+        self.inside_loop = False
 
     def visit_bin_op(self, node: 'BinaryOpNode'):
         node.left.accept(self)
@@ -306,20 +325,26 @@ class SymbolVisitor(Visitor):
         node.else_branch and node.else_branch.accept(self)
 
     def visit_loop(self, node: 'LoopStatement'):
+        self.inside_loop = True
         node.scope = self.scope_manager.current_scope
+        node.condition.accept(self)
+        node.body.accept(self)
         with self.scope_manager.new_scope() as scope:
             node.body.accept(self)
+        self.inside_loop = False
 
 
     def visit_func_def(self, node: 'FuncDefNode'):
         node.scope = self.scope_manager.current_scope
         func = FunctionSymbol(node.name.name, utils.extract_type_from_ast(node), func_def=node)
         self.scope_manager.add(func)
+        self.inside_function = True
         with self.scope_manager.new_scope():
             for arg in node.args:
                 arg.accept(self)
             node.body.accept(self)
             node.return_type.accept(self)
+        self.inside_function = False
 
 
     def visit_proc(self, node: 'ProcNode'):
@@ -332,13 +357,18 @@ class SymbolVisitor(Visitor):
         #     self.reporter.add_undefined_error_by_ast(node.name, node)
 
     def visit_type_def(self, node: 'TypeDefNode'):
-        symbol = TypeSymbol(node.type_name.name, utils.extract_type_from_ast(node), type_def_ast=node)
+        symbol = TypeSymbol(node.type_node.name, type_def_ast=node)
         self.add_symbol(symbol, node)
         node.scope = self.scope_manager.current_scope
-        for _, type_node in node.type_def:
-            type_node.accept(self)
+        with self.scope_manager.new_scope():
+            for type_var in node.type_node.type_parameters:
+                type_var.accept(self)
+            for _, type_node in node.type_def:
+                type_node.accept(self)
 
     def visit_return(self, node: 'ReturnNode'):
+        if not self.inside_function:
+            raise Exception("can only use return inside function\n" + self.reporter.mark(node))
         node.expr and node.expr.accept(self)
         node.scope = self.scope_manager.current_scope
 
@@ -396,6 +426,16 @@ class SymbolVisitor(Visitor):
     def visit_trait_node(self, node: 'TraitNode'):
         node.scope = self.scope_manager.current_scope
 
+    def visit_continue_or_break(self, node: 'ContinueOrBreak'):
+        if not self.inside_loop:
+            raise SyntaxError(f"can only use {node.kind} inside function\n" + self.reporter.mark(node))
+
+    def visit_type_annotation(self, node: 'TypeAnnotationNode'):
+        node.scope = self.scope_manager.current_scope
+        self.add_symbol(TypeSymbol(node.name, utils.extract_type_from_ast(node)), node)
+
+    def visit_type_var(self, node: 'TypeVarNode'):
+        self.add_symbol(TypeSymbol(node.identifier.name, utils.extract_type_from_ast(node), is_var=True), node)
 
 class SymbolDefinitionVisitor(Visitor):
 
@@ -430,7 +470,8 @@ class SymbolDefinitionVisitor(Visitor):
         node.else_branch and node.else_branch.accept(self)
 
     def visit_loop(self, node: 'LoopStatement'):
-        pass
+        node.condition.accept(self)
+        node.body.accept(self)
 
     def visit_func_def(self, node: 'FuncDefNode'):
         for arg in node.args:
@@ -507,6 +548,7 @@ class SymbolDefinitionVisitor(Visitor):
 
 
 
+
 class ReferenceResolveVisitor(Visitor):
 
     def __init__(self, error_reporter: ErrorReporter):
@@ -514,7 +556,11 @@ class ReferenceResolveVisitor(Visitor):
         self.expect_return_type = None
 
     def visit_type_def(self, node: 'TypeDefNode') -> BaseType:
-        return utils.extract_type_from_ast(node)
+        type_def = utils.extract_type_from_ast(node, {param.identifier.name for param in node.type_node.type_parameters})
+        type_symbol = node.scope.lookup_type(node.type_node.name)
+        assert type_symbol
+        type_symbol.type_def = type_def
+        return type_def
 
     def visit_bin_op(self, node: 'BinaryOpNode') -> BaseType:
         left_type = node.left.accept(self)
@@ -664,14 +710,20 @@ class ReferenceResolveVisitor(Visitor):
     def visit_type_init(self, node: 'DataInitNode'):
         data_type = node.scope.lookup_type(node.type_name.name)
         res = {}
+        type_infers = {}
         for expr in node.body:
             name = expr.var.identifier.name
             impl_type = expr.assign_expr.accept(self)
             defined_type = data_type.type_def.types.get(name)
             assert defined_type is not None
-            # if defined_type is None:
-            #     raise UndefinedError(f"Type '{node.type_name.name}' don't have a attribute named '{name}'\n" + self.error_reporter.mark(expr))
-            if impl_type != defined_type:
+            if isinstance(defined_type, TypeVar):
+                type_var_name = defined_type.name
+                inferred_type = type_infers.get(type_var_name)
+                if inferred_type and inferred_type != defined_type:
+                    raise TypeError(f"{defined_type} is not match with {impl_type}")
+                elif inferred_type is None:
+                    type_infers[type_var_name] = impl_type
+            elif impl_type != defined_type:
                 raise TypeError(f"{defined_type} is not match with {impl_type}")
             res[name] = impl_type
         return Type(node.type_name.name)

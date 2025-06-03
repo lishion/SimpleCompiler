@@ -1,5 +1,5 @@
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union
 
 
@@ -15,18 +15,20 @@ class VarType(Enum):
 def is_primitive(name: str) -> bool:
     return name in VarType.__members__
 
-
-
 @dataclass
 class Kind:
     pass
 
+type Types = Kind | Type | FunctionSignature | FunctionOverloadType | StructureType | StructureType
+type BaseType = Type | FunctionSignature | StructureType
+
 @dataclass
 class Type:
     name: str
+    args: Tuple['Type'] = field(default_factory=list)
 
     def __hash__(self) -> int:
-        return hash(self.name)
+        return hash((self.name, self.args))
 
     def replace_type_var(self, type_var, target_type):
         if self.name == type_var:
@@ -79,8 +81,12 @@ class TraitType:
     traits: List[FunctionSignature]
 
 @dataclass
+class TypeVar:
+    name: str
+
+@dataclass
 class StructureType:
-    types: Dict[str, Union[Type, FunctionSignature, FunctionOverloadType, 'StructureType']]
+    types: Dict[str, Union[Type, FunctionSignature, FunctionOverloadType, 'StructureType', TypeVar]]
 
 @dataclass
 class TraitConstraintsType:
@@ -96,7 +102,9 @@ def resolve(t: Type, scope: 'Scope'):
     return StructureType({name: resolve(t1, scope) for name, t1 in t.types.items()})
 
 
-type Types = Kind | Type | FunctionSignature | FunctionOverloadType | StructureType | StructureType
-type BaseType = Type | FunctionSignature | StructureType
+
+
+def is_primitive_type(base_type: BaseType) -> bool:
+    return isinstance(base_type, Type) and is_primitive(base_type.name)
 
 UNIT = Type("Unit")

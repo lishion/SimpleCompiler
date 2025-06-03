@@ -27,6 +27,10 @@ TOKENS.create_by_string("trait")
 TOKENS.create_by_string("->")
 TOKENS.create_by_string("null")
 TOKENS.create_by_string("self")
+TOKENS.create_by_string("break")
+TOKENS.create_by_string("continue")
+TOKENS.create_by_string("true")
+TOKENS.create_by_string("false")
 TOKENS.create(
     Expression.char("#") + Expression.any_char(['\n']).star(),
     "comment"
