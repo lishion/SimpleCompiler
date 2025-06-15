@@ -47,7 +47,7 @@ class Visitor(ABC):
         return None
 
     @abstractmethod
-    def visit_func_def(self, node: 'FuncDefNode'):
+    def visit_function_def(self, node: 'FunctionDefNode'):
         return None
 
     @abstractmethod
@@ -59,11 +59,11 @@ class Visitor(ABC):
         return None
 
     @abstractmethod
-    def visit_type(self, node: 'TypeNode'):
+    def visit_type(self, node: 'StructNode'):
         return None
 
     @abstractmethod
-    def visit_type_def(self, node: 'TypeNode'):
+    def visit_type_def(self, node: 'StructNode'):
         return None
 
     @abstractmethod
@@ -75,7 +75,7 @@ class Visitor(ABC):
         return None
 
     @abstractmethod
-    def visit_type_init(self, node: 'DataInitNode'):
+    def visit_type_init(self, node: 'StructInitNode'):
         return None
 
     @abstractmethod
@@ -109,7 +109,7 @@ class Visitor(ABC):
     def visit_type_var(self, node: 'TypeVarNode'):
         pass
 
-    def visit_type_annotation(self, node: 'TypeAnnotationNode'):
+    def visit_type_annotation(self, node: 'TypeAnnotation'):
         pass
 
 class PositionVisitor(Visitor):
@@ -159,7 +159,7 @@ class PositionVisitor(Visitor):
         node.start_pos, node.end_pos = s1, e2
         return node.start_pos, node.end_pos
 
-    def visit_func_def(self, node: 'FuncDefNode'):
+    def visit_function_def(self, node: 'FunctionDefNode'):
         node.start_pos, node.end_pos = node.name.accept(self)
         if node.body.stmts:
             for stmt in node.body.stmts:
@@ -181,12 +181,12 @@ class PositionVisitor(Visitor):
             node.end_pos = end
         return node.start_pos, node.end_pos
 
-    def visit_type(self, node: 'TypeNode'):
+    def visit_type(self, node: 'StructNode'):
         return node.start_pos, node.end_pos
 
-    def visit_type_def(self, node: 'TypeDefNode'):
-        start_pos = node.type_node.accept(self)[0]
-        end_pos = [(name.accept(self), d.accept(self)) for name, d in node.type_def]
+    def visit_type_def(self, node: 'StructDefNode'):
+        start_pos = node.name_and_param.accept(self)[0]
+        end_pos = [(name.accept(self), d.accept(self)) for name, d in node.fields]
         node.start_pos, node.end_pos = start_pos, end_pos[-1][1]
         return node.start_pos, node.end_pos
 
@@ -198,7 +198,7 @@ class PositionVisitor(Visitor):
     def visit_identifier(self, node: 'IdNode'):
         return node.start_pos, node.end_pos
 
-    def visit_type_init(self, node: 'DataInitNode'):
+    def visit_type_init(self, node: 'StructInitNode'):
         node.start_pos, node.end_pos = node.type_name.accept(self)
         for expr in node.body:
             expr.accept(self)
@@ -220,16 +220,16 @@ class PositionVisitor(Visitor):
         return node.start_pos, node.end_pos
 
     def visit_trait_def(self, node: 'TraitDefNode'):
-        node.start_pos, node.end_pos = node.trait_name.accept(self)
+        node.start_pos, node.end_pos = node.name_and_param.accept(self)
         node.type_var.accept(self)
-        for function in node.trait_functions:
+        for function in node.functions:
             node.end_pos = function.accept(self)[-1]
         return node.start_pos, node.end_pos
 
     def visit_trait_impl(self, node: 'TraitImplNode'):
         node.trait.accept(self)
         node.target_type.accept(self)
-        for function in node.impls:
+        for function in node.functions:
             function.accept(self)
         return node.start_pos, node.end_pos
 
@@ -252,7 +252,7 @@ class PositionVisitor(Visitor):
     def visit_continue_or_break(self, node: 'ContinueOrBreak'):
         return node.start_pos, node.end_pos
 
-    def visit_type_annotation(self, node: 'TypeAnnotationNode'):
+    def visit_type_annotation(self, node: 'TypeAnnotation'):
         return node.start_pos, node.end_pos
 
 
@@ -285,9 +285,9 @@ class SymbolVisitor(Visitor):
     def add_symbol(self, symbol: Symbol, ast: ASTNode):
         try:
             if type(symbol) in (VarSymbol, FunctionSymbol, TBDSymbol):
-                self.scope_manager.current_scope.add(symbol)
+                self.scope_manager.current_scope.add_var(symbol)
             elif type(symbol) is TypeSymbol:
-                self.scope_manager.add_type(symbol)
+                self.scope_manager.add_struct(symbol)
             elif type(symbol) is TraitSymbol:
                 self.scope_manager.add_trait(symbol)
             else:
@@ -302,7 +302,7 @@ class SymbolVisitor(Visitor):
         node.var_type and node.var_type.accept(self)
         node.init_expr and node.init_expr.accept(self)
         # 可能是函数/变量/Trait，先使用 TBDSymbol 占位
-        self.add_symbol(TBDSymbol(node.var_node.name), node)
+        self.add_symbol(TBDSymbol(node.var_node.string), node)
 
 
     def visit_block(self, node: 'BlockNode'):
@@ -334,10 +334,10 @@ class SymbolVisitor(Visitor):
         self.inside_loop = False
 
 
-    def visit_func_def(self, node: 'FuncDefNode'):
+    def visit_function_def(self, node: 'FunctionDefNode'):
         node.scope = self.scope_manager.current_scope
-        func = FunctionSymbol(node.name.name, utils.extract_type_from_ast(node), func_def=node)
-        self.scope_manager.add(func)
+        func = FunctionSymbol(node.name.string, utils.extract_type_from_ast(node), func_def=node)
+        self.scope_manager.add_var(func)
         self.inside_function = True
         with self.scope_manager.new_scope():
             for arg in node.args:
@@ -351,19 +351,19 @@ class SymbolVisitor(Visitor):
         for child in node.children:
             child.accept(self)
 
-    def visit_type(self, node: 'TypeNode'):
+    def visit_type(self, node: 'StructNode'):
         node.scope = self.scope_manager.current_scope
         # if not node.scope.lookup_type(node.name):
         #     self.reporter.add_undefined_error_by_ast(node.name, node)
 
-    def visit_type_def(self, node: 'TypeDefNode'):
-        symbol = TypeSymbol(node.type_node.name, type_def_ast=node)
+    def visit_type_def(self, node: 'StructDefNode'):
+        symbol = TypeSymbol(node.name_and_param.name, type_def_ast=node)
         self.add_symbol(symbol, node)
         node.scope = self.scope_manager.current_scope
         with self.scope_manager.new_scope():
-            for type_var in node.type_node.type_parameters:
+            for type_var in node.name_and_param.parameters:
                 type_var.accept(self)
-            for _, type_node in node.type_def:
+            for _, type_node in node.fields:
                 type_node.accept(self)
 
     def visit_return(self, node: 'ReturnNode'):
@@ -375,7 +375,7 @@ class SymbolVisitor(Visitor):
     def visit_identifier(self, node: 'IdNode'):
         node.scope = self.scope_manager.current_scope
 
-    def visit_type_init(self, node: 'DataInitNode'):
+    def visit_type_init(self, node: 'StructInitNode'):
         node.scope = self.scope_manager.current_scope
         node.type_name.accept(self)
         for body in node.body:
@@ -389,18 +389,18 @@ class SymbolVisitor(Visitor):
 
     def visit_trait_def(self, node: 'TraitDefNode'):
         node.scope = self.scope_manager.current_scope
-        trait = TraitSymbol(node.trait_name.name, node.type_var.name)
+        trait = TraitSymbol(node.name_and_param.name, node.type_var.string)
         self.add_symbol(trait, node)
         with self.scope_manager.new_scope() as scope:
-            scope.add_type_var(TypeSymbol(node.type_var.name))
-            for f in node.trait_functions:
+            scope.add_type_var(TypeSymbol(node.type_var.string))
+            for f in node.functions:
                 f.accept(self)
-                trait.add_function(f.name.name, utils.extract_type_from_ast(f))
+                trait.add_function(f.name.string, utils.extract_type_from_ast(f))
 
     def visit_trait_function(self, node: 'TraitFunctionNode'):
         node.scope = self.scope_manager.current_scope
-        func = FunctionSymbol(node.name.name, utils.extract_type_from_ast(node), func_def=node, belong_to_trait=True)
-        self.scope_manager.add(func)
+        func = FunctionSymbol(node.name.string, utils.extract_type_from_ast(node), func_def=node, belong_to_trait=True)
+        self.scope_manager.add_var(func)
         with self.scope_manager.new_scope():
             for arg in node.args:
                 arg.accept(self)
@@ -410,7 +410,7 @@ class SymbolVisitor(Visitor):
         node.scope = self.scope_manager.current_scope
         node.target_type.accept(self)
         with self.scope_manager.new_scope() as scope:
-            for function in node.impls:
+            for function in node.functions:
                 function.accept(self)
 
     def visit_attribute(self, node: 'AttributeNode'):
@@ -430,12 +430,12 @@ class SymbolVisitor(Visitor):
         if not self.inside_loop:
             raise SyntaxError(f"can only use {node.kind} inside function\n" + self.reporter.mark(node))
 
-    def visit_type_annotation(self, node: 'TypeAnnotationNode'):
+    def visit_type_annotation(self, node: 'TypeAnnotation'):
         node.scope = self.scope_manager.current_scope
         self.add_symbol(TypeSymbol(node.name, utils.extract_type_from_ast(node)), node)
 
     def visit_type_var(self, node: 'TypeVarNode'):
-        self.add_symbol(TypeSymbol(node.identifier.name, utils.extract_type_from_ast(node), is_var=True), node)
+        self.add_symbol(TypeSymbol(node.name.string, utils.extract_type_from_ast(node), is_var=True), node)
 
 class SymbolDefinitionVisitor(Visitor):
 
@@ -473,11 +473,11 @@ class SymbolDefinitionVisitor(Visitor):
         node.condition.accept(self)
         node.body.accept(self)
 
-    def visit_func_def(self, node: 'FuncDefNode'):
+    def visit_function_def(self, node: 'FunctionDefNode'):
         for arg in node.args:
             arg.accept(self)
         if node.trait_node:
-            node.scope.add(TBDSymbol("self"))
+            node.scope.add_var(TBDSymbol("self"))
         node.body.accept(self)
         node.return_type.accept(self)
 
@@ -489,31 +489,31 @@ class SymbolDefinitionVisitor(Visitor):
         node.var_type and node.var_type.accept(self)
         node.init_expr and node.init_expr.accept(self)
 
-    def visit_type(self, node: 'TypeNode'):
-        if not node.scope.lookup_type(node.name):
+    def visit_type(self, node: 'StructNode'):
+        if not node.scope.lookup_struct(node.name):
             self.error_reporter.add_undefined_error_by_ast(node.name, node)
             return False
         return True
 
-    def visit_type_def(self, node: 'TypeDefNode'):
-        for _, d in node.type_def:
+    def visit_type_def(self, node: 'StructDefNode'):
+        for _, d in node.fields:
             d.accept(self)
 
     def visit_return(self, node: 'ReturnNode'):
         node.expr.accept(self)
 
     def visit_identifier(self, node: 'IdNode'):
-        if not node.scope.lookup(node.name):
-            self.error_reporter.add_undefined_error_by_ast(node.name, node)
+        if not node.scope.lookup(node.string):
+            self.error_reporter.add_undefined_error_by_ast(node.string, node)
 
-    def visit_type_init(self, node: 'DataInitNode'):
-        structure_type = node.scope.lookup_type(node.type_name.name)
+    def visit_type_init(self, node: 'StructInitNode'):
+        structure_type = node.scope.lookup_struct(node.type_name.name)
         if not structure_type:
             self.error_reporter.report_undefined("", node.type_name.name, node.type_name)
-        structure_type = node.scope.lookup_type(node.type_name.name)
+        structure_type = node.scope.lookup_struct(node.type_name.name)
         for assign in node.body:
-            if assign.var.identifier.name not in structure_type.type_def.types:
-                self.error_reporter.add_undefined_message(f"unresolved attribute '{assign.var.identifier.name}' for type '{node.type_name.name}'", assign)
+            if assign.var.identifier.string not in structure_type.fields.types:
+                self.error_reporter.add_undefined_message(f"unresolved attribute '{assign.var.identifier.string}' for type '{node.type_name.name}'", assign)
             assign.assign_expr.accept(self)
 
     def visit_function_type(self, node: 'FunctionTypeNode'):
@@ -527,17 +527,17 @@ class SymbolDefinitionVisitor(Visitor):
         node.return_type.accept(self)
 
     def visit_trait_def(self, node: 'TraitDefNode'):
-        for func in node.trait_functions:
+        for func in node.functions:
             func.accept(self)
 
     def visit_trait_impl(self, node: 'TraitImplNode'):
         node.target_type.accept(self)
-        for node in node.impls:
+        for node in node.functions:
             node.accept(self)
 
     def visit_trait_node(self, node: 'TraitNode'):
-        if not node.scope.lookup_traits(node.name.name):
-            self.error_reporter.add_undefined_error_by_ast(node.name.name, node)
+        if not node.scope.lookup_traits(node.name.string):
+            self.error_reporter.add_undefined_error_by_ast(node.name.string, node)
 
     def visit_type_constraint(self, node: 'TraitConstraintNode'):
         for trait in node.traits:
@@ -555,11 +555,11 @@ class ReferenceResolveVisitor(Visitor):
         self.error_reporter = error_reporter
         self.expect_return_type = None
 
-    def visit_type_def(self, node: 'TypeDefNode') -> BaseType:
-        type_def = utils.extract_type_from_ast(node, {param.identifier.name for param in node.type_node.type_parameters})
-        type_symbol = node.scope.lookup_type(node.type_node.name)
+    def visit_type_def(self, node: 'StructDefNode') -> BaseType:
+        type_def = utils.extract_type_from_ast(node, {param.name.string for param in node.name_and_param.parameters})
+        type_symbol = node.scope.lookup_struct(node.name_and_param.name)
         assert type_symbol
-        type_symbol.type_def = type_def
+        type_symbol.fields = type_def
         return type_def
 
     def visit_bin_op(self, node: 'BinaryOpNode') -> BaseType:
@@ -585,7 +585,7 @@ class ReferenceResolveVisitor(Visitor):
         return Type(node.literal_type)
 
     def visit_var(self, node: 'VarNode') -> BaseType:
-        defined_var = node.scope.lookup(node.identifier.name)
+        defined_var = node.scope.lookup(node.identifier.string)
         if isinstance(defined_var, VarSymbol):
             return defined_var.var_type
         elif isinstance(defined_var, FunctionSymbol):
@@ -613,7 +613,7 @@ class ReferenceResolveVisitor(Visitor):
                             stmt, context_node=node))
         return self.expect_return_type if has_return_node else None
 
-    def visit_func_def(self, node: 'FuncDefNode'):
+    def visit_function_def(self, node: 'FunctionDefNode'):
         for var_def in node.args:
             var_def.accept(self)
         return_type = node.return_type.accept(self)
@@ -680,7 +680,7 @@ class ReferenceResolveVisitor(Visitor):
         for child in node.children:
             child.accept(self)
 
-    def visit_type(self, node: 'TypeNode'):
+    def visit_type(self, node: 'StructNode'):
         return Type(node.name)
 
     def visit_var_def(self, node: 'VarDefNode'):
@@ -695,9 +695,9 @@ class ReferenceResolveVisitor(Visitor):
         final_type = decl_type or init_type
 
         if type(final_type) is FunctionSignature:
-            node.scope.replace(node.var_node.name, FunctionSymbol(node.var_node.name, final_type))
+            node.scope.replace(node.var_node.string, FunctionSymbol(node.var_node.string, final_type))
         else:
-            node.scope.replace(node.var_node.name, VarSymbol(node.var_node.name, final_type))
+            node.scope.replace(node.var_node.string, VarSymbol(node.var_node.string, final_type))
         return final_type
 
 
@@ -707,14 +707,14 @@ class ReferenceResolveVisitor(Visitor):
     def visit_identifier(self, node: 'IdNode'):
         pass
 
-    def visit_type_init(self, node: 'DataInitNode'):
-        data_type = node.scope.lookup_type(node.type_name.name)
+    def visit_type_init(self, node: 'StructInitNode'):
+        data_type = node.scope.lookup_struct(node.type_name.name)
         res = {}
         type_infers = {}
         for expr in node.body:
-            name = expr.var.identifier.name
+            name = expr.var.identifier.string
             impl_type = expr.assign_expr.accept(self)
-            defined_type = data_type.type_def.types.get(name)
+            defined_type = data_type.fields.types.get(name)
             assert defined_type is not None
             if isinstance(defined_type, TypeVar):
                 type_var_name = defined_type.name
@@ -730,9 +730,9 @@ class ReferenceResolveVisitor(Visitor):
 
     def visit_function_type(self, node: 'FunctionTypeNode'):
         for arg_type in node.args:
-            if not node.scope.lookup_type(arg_type.name):
+            if not node.scope.lookup_struct(arg_type.name):
                 self.error_reporter.report_undefined("Type", arg_type.name, arg_type)
-        if not node.scope.lookup_type(node.return_type.name):
+        if not node.scope.lookup_struct(node.return_type.name):
             self.error_reporter.report_undefined("Type", node.return_type.name, node.return_type)
         return utils.extract_type_from_ast(node)
 
@@ -743,8 +743,8 @@ class ReferenceResolveVisitor(Visitor):
         super().visit_trait_def(node)
 
     def visit_trait_impl(self, node: 'TraitImplNode'):
-        trait_symbol = node.scope.lookup_traits(node.trait.name.name)
-        impled_functions = {f.name.name: f for f in node.impls}
+        trait_symbol = node.scope.lookup_traits(node.trait.name.string)
+        impled_functions = {f.name.string: f for f in node.functions}
         for impl_func_name, signature in trait_symbol.functions.items():
             defined_signature = signature.replace_type_var(trait_symbol.type_var_name, node.target_type.name)
             if not impled_functions.get(impl_func_name):
@@ -755,7 +755,7 @@ class ReferenceResolveVisitor(Visitor):
             if impl_signature != defined_signature:
                 raise ValueError(f"Function signature {impl_signature} is not match in trait {defined_signature}")
             node.scope.impl_trait(node.target_type.name, trait_symbol.name, FunctionSymbol(impl_func_name, impl_signature))
-        for f in node.impls:
+        for f in node.functions:
             f.accept(self)
 
     def visit_trait_node(self, node: 'TraitNode'):
@@ -766,28 +766,28 @@ class ReferenceResolveVisitor(Visitor):
         if isinstance(t, TraitConstraintsType):
             for trait_name in t.constraints:
                 trait_symbol = node.scope.lookup_traits(trait_name)
-                if node.attr.name in trait_symbol.functions:
-                    return trait_symbol.functions[node.attr.name]
-            raise ValueError(f"attr {node.attr.name} not found in {t}")
+                if node.attr.string in trait_symbol.functions:
+                    return trait_symbol.functions[node.attr.string]
+            raise ValueError(f"attr {node.attr.string} not found in {t}")
         else:
-            resolved_type = node.scope.lookup_type(t.name).type_def
+            resolved_type = node.scope.lookup_struct(t.string).fields
             # 先寻找类型中定义的 attribute
-            if node.attr.name not in resolved_type.types:
+            if node.attr.string not in resolved_type.types:
                 resolved_trait_func = None
-                impled_trait = node.scope.get_impl_by_target(t.name)
+                impled_trait = node.scope.get_impl_by_target(t.string)
                 # 没有的话去实现的 trait 中找
                 for trait, function_symbols in impled_trait.items():
                     for function_symbol in function_symbols:
-                        if function_symbol.name == node.attr.name: # todo: raise exception if there are multiple impls with same function name
+                        if function_symbol.string == node.attr.string: # todo: raise exception if there are multiple impls with same function name
                             resolved_trait_func = function_symbol.signature
                             break
                 if not resolved_trait_func:
-                    raise ValueError(f"attr {node.attr.name} not found in {t.name}")
+                    raise ValueError(f"attr {node.attr.string} not found in {t.string}")
                 return resolved_trait_func
-        return resolved_type.types[node.attr.name]
+        return resolved_type.types[node.attr.string]
 
     def visit_type_constraint(self, node: 'TraitConstraintNode'):
-        return TraitConstraintsType([x.name.name for x in node.traits])
+        return TraitConstraintsType([x.name.string for x in node.traits])
 
 class EvalVisitor(Visitor):
     def __init__(self, global_scope: Scope, meta_manager: MetaManager, code_generator: PythonCodeGenerator):
@@ -801,7 +801,7 @@ class EvalVisitor(Visitor):
         return f"{left} {node.op} {right}"
 
     def visit_assign(self, node: 'AssignNode'):
-        return f"{node.var.identifier.name}={node.assign_expr.accept(self)}"
+        return f"{node.var.identifier.string}={node.assign_expr.accept(self)}"
 
     def visit_lit(self, node: 'LiteralNode'):
         match VarType(node.literal_type):
@@ -812,7 +812,7 @@ class EvalVisitor(Visitor):
             case _: return node.val
 
     def visit_var(self, node: 'VarNode'):
-        return node.identifier.name
+        return node.identifier.string
 
     def visit_block(self, node: 'BlockNode'):
         res = "\n".join([utils.indent(stmt.accept(self), 1)   for stmt in node.stmts] )
@@ -848,9 +848,9 @@ class EvalVisitor(Visitor):
     def visit_loop(self, node: 'LoopStatement'):
         pass
 
-    def visit_func_def(self, node: 'FuncDefNode'):
-        function_name = f"__{node.trait_node.trait.name.name}__{node.trait_node.target_type.name}__{node.name.name}" if node.trait_node else node.name.name
-        args = [x.var_node.name for x in node.args]
+    def visit_function_def(self, node: 'FunctionDefNode'):
+        function_name = f"__{node.trait_node.trait.name.string}__{node.trait_node.target_type.name}__{node.name.string}" if node.trait_node else node.name.string
+        args = [x.var_node.string for x in node.args]
         node.trait_node and args.insert(0, "self")
         res = [
                 f"def {function_name}({','.join(args)}):",
@@ -868,13 +868,13 @@ class EvalVisitor(Visitor):
         return "\n".join(res)
 
     def visit_var_def(self, node: 'VarDefNode'):
-        return f"{node.var_node.name} = {node.init_expr.accept(self)}"
+        return f"{node.var_node.string} = {node.init_expr.accept(self)}"
 
-    def visit_type(self, node: 'TypeNode'):
+    def visit_type(self, node: 'StructNode'):
         pass
 
-    def visit_type_def(self, node: 'TypeDefNode'):
-        self.meta_manager.add_meta(DataMeta(node.type_name.name))
+    def visit_type_def(self, node: 'StructDefNode'):
+        self.meta_manager.add_meta(DataMeta(node.type_name.string))
 
     def visit_return(self, node: 'ReturnNode'):
         return f"return {node.expr.accept(self)}"
@@ -882,15 +882,15 @@ class EvalVisitor(Visitor):
     def visit_identifier(self, node: 'IdNode'):
         pass
 
-    def visit_type_init(self, node: 'DataInitNode'):
-        data_code = "{" + ", ".join([f"'{x.var.identifier.name}':{x.assign_expr.accept(self)}" for x in node.body]) + "}"
+    def visit_type_init(self, node: 'StructInitNode'):
+        data_code = "{" + ", ".join([f"'{x.var.identifier.string}':{x.assign_expr.accept(self)}" for x in node.body]) + "}"
         return f"""meta_manager.create_object('{node.type_name.name}', {data_code})"""
 
     def visit_function_type(self, node: 'FunctionTypeNode'):
         pass
 
     def visit_attribute(self, node: 'AttributeNode'):
-        return f"{node.data.accept(self)}.attr('{node.attr.name}')"
+        return f"{node.data.accept(self)}.attr('{node.attr.string}')"
 
     def visit_trait_function(self, node: 'TraitFunctionNode'):
         super().visit_trait_function(node)
@@ -901,9 +901,9 @@ class EvalVisitor(Visitor):
     def visit_trait_impl(self, node: 'TraitImplNode'):
         target_type_name = node.target_type.name
         res = []
-        for function in node.impls:
-            function_name = function.name.name
-            compile_name = f"__{node.trait.name.name}__{node.target_type.name}__{function_name}"
+        for function in node.functions:
+            function_name = function.name.string
+            compile_name = f"__{node.trait.name.string}__{node.target_type.name}__{function_name}"
             res.append(function.accept(self))
             res.append(f"meta_manager.get_meta('{target_type_name}').vtable['{function_name}'] = {compile_name}")
         return "\n".join(res)

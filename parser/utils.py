@@ -1,11 +1,11 @@
-from types import FunctionType
-from typing import List, Tuple, Set
+from typing import List, Tuple, Set, Callable
 
 from lexer.lexer import Lexer
-from parser.node import FunctionCallNode, Nothing, TypeNode, FunctionTypeNode, TraitFunctionNode, VarDefNode, \
-    FuncDefNode, TypeDefNode, DataInitNode, TraitConstraintNode, TypeAnnotationNode, TypeVarNode
+from parser.node import  Nothing, FunctionTypeNode, TraitFunctionNode, VarDefNode, \
+    FunctionDefNode, StructDefNode, TraitConstraintNode, TypeAnnotation, TypeVarNode
 from parser.scope import Scope, ScopeManager
 from parser.symbol import Symbol, TypeSymbol, FunctionSymbol, TraitSymbol
+from parser.symbol_type import PrimitiveType, TypeRef
 from parser.types import Type, FunctionSignature, StructureType, TraitConstraintsType, TypeVar
 
 
@@ -15,7 +15,7 @@ class RepeatParser:
         self.split = split
         self.end = end
 
-    def parse(self, lexer: Lexer, parser):
+    def parse[T](self, lexer: Lexer, parser: Callable[[Lexer], T]) -> List[T]:
         res = []
         if lexer.try_peek(self.end):
             lexer.pop()
@@ -44,66 +44,109 @@ def combiner(*parsers):
 
 
 
-def extract_type_from_ast(ast_node: TypeNode | FunctionTypeNode | TraitFunctionNode | VarDefNode | List | FuncDefNode | TypeDefNode | TypeAnnotationNode | TypeVarNode, type_vars: set[str]=None) -> Type | FunctionSignature | Tuple[Type | FunctionSignature, ...] | StructureType:
-    type_vars = type_vars or set()
-    def helper(ast):
-        if isinstance(ast, TypeVarNode):
-            return TypeVar(ast.identifier.name)
-        if type(ast) in (list, set, tuple):
-            return tuple(helper(x) for x in ast)
-        elif type(ast) is TypeNode:
-            return TypeVar(ast.name) if ast.name in type_vars else Type(ast.name, args=helper(ast.type_parameters))
-        elif type(ast) is FunctionTypeNode:
-            return FunctionSignature(
-                tuple([helper(x) for x in ast.args]),
-                helper(ast.return_type)
-            )
-        elif type(ast) is TraitFunctionNode:
-            return FunctionSignature(
-                tuple([helper(x) for x in ast.args]),
-                helper(ast.return_type)
-            )
-        elif type(ast) is FuncDefNode:
-            return FunctionSignature(
-                helper(ast.args),
-                helper(ast.return_type)
-            )
-        elif type(ast) is VarDefNode:
-            return helper(ast.var_type)
-        elif type(ast) in (TypeDefNode, TypeAnnotationNode) :
-            return StructureType({id_node.name: helper(type_node) for id_node, type_node in ast.type_def})
-        elif type(ast) is TraitConstraintNode:
-            return TraitConstraintsType([x.name.name for x in ast.traits])
-        else:
-            raise Exception("can not reach here")
-    return helper(ast_node)
-
+# def extract_type_from_ast(ast_node: StructNode | FunctionTypeNode | TraitFunctionNode | VarDefNode | List | FunctionDefNode | StructDefNode | TypeNameAndParamNode | TypeVarNode, type_vars: set[str]=None) -> Type | FunctionSignature | Tuple[Type | FunctionSignature, ...] | StructureType:
+#     type_vars = type_vars or set()
+#     def helper(ast):
+#         if isinstance(ast, TypeVarNode):
+#             return TypeVar(ast.name.string)
+#         if type(ast) in (list, set, tuple):
+#             return tuple(helper(x) for x in ast)
+#         elif type(ast) is StructNode:
+#             return TypeVar(ast.string) if ast.string in type_vars else Type(ast.string, args=helper(ast.parameters))
+#         elif type(ast) is FunctionTypeNode:
+#             return FunctionSignature(
+#                 tuple([helper(x) for x in ast.args]),
+#                 helper(ast.return_type)
+#             )
+#         elif type(ast) is TraitFunctionNode:
+#             return FunctionSignature(
+#                 tuple([helper(x) for x in ast.args]),
+#                 helper(ast.return_type)
+#             )
+#         elif type(ast) is FunctionDefNode:
+#             return FunctionSignature(
+#                 helper(ast.args),
+#                 helper(ast.return_type)
+#             )
+#         elif type(ast) is VarDefNode:
+#             return helper(ast.var_type)
+#         elif type(ast) in (StructDefNode, TypeNameAndParamNode) :
+#             return StructureType({id_node.string: helper(type_node) for id_node, type_node in ast.type_def})
+#         elif type(ast) is TraitConstraintNode:
+#             return TraitConstraintsType([x.string.string for x in ast.traits])
+#         else:
+#             raise Exception("can not reach here")
+#     return helper(ast_node)
+#
+#
+# def get_type_from_ast(ast_node: StructNode | FunctionTypeNode | TraitFunctionNode | VarDefNode | List | FunctionDefNode | StructDefNode | TypeNameAndParamNode | TypeVarNode, type_vars: set[str]=None):
+#     def helper(ast):
+#         if isinstance(ast, TypeVarNode):
+#             return TypeVar(ast.name.string)
+#         if type(ast) in (list, set, tuple):
+#             return tuple(helper(x) for x in ast)
+#         elif type(ast) is StructNode:
+#             return TypeVar(ast.string) if ast.string in type_vars else Type(ast.string, args=helper(ast.parameters))
+#         elif type(ast) is FunctionTypeNode:
+#             return FunctionSignature(
+#                 tuple([helper(x) for x in ast.args]),
+#                 helper(ast.return_type)
+#             )
+#         elif type(ast) is TraitFunctionNode:
+#             return FunctionSignature(
+#                 tuple([helper(x) for x in ast.args]),
+#                 helper(ast.return_type)
+#             )
+#         elif type(ast) is FunctionDefNode:
+#             return FunctionSignature(
+#                 helper(ast.args),
+#                 helper(ast.return_type)
+#             )
+#         elif type(ast) is VarDefNode:
+#             return helper(ast.var_type)
+#         elif type(ast) in (StructDefNode, TypeNameAndParamNode):
+#             return StructureType({id_node.string: helper(type_node) for id_node, type_node in ast.type_def})
+#         elif type(ast) is TraitConstraintNode:
+#             return TraitConstraintsType([x.string.string for x in ast.traits])
+#         else:
+#             raise Exception("can not reach here")
+#
+#     return helper(ast_node)
 
 def init_global_scope(scope_manager: ScopeManager):
-    scope_manager.add_type(TypeSymbol("Int"))
-    scope_manager.add_type(TypeSymbol("String"))
-    scope_manager.add_type(TypeSymbol("Float"))
-    scope_manager.add_type(TypeSymbol("Bool"))
-    scope_manager.add_type(TypeSymbol("Unit"))
-    scope_manager.global_scope.add(FunctionSymbol("echo", FunctionSignature((Type("Any"),), Type("Unit")), native_call=print))
-    scope_manager.add_trait(
-        TraitSymbol(
-            "Write",
-            "T",
-            {
-                'toString': FunctionSignature((), Type("String"), True)
-            }
-        )
-    )
-    scope_manager.add_trait(
-        TraitSymbol(
-            "Read",
-            "T",
-            {
-                'toString': FunctionSignature((Type("String"),), Type("T"), True)
-            }
-        )
-    )
+    PRIMITIVE_TYPE_NAME = [
+        "Int",
+        "String",
+        "Float",
+        "Bool",
+        "Unit"
+    ]
+    for t in PRIMITIVE_TYPE_NAME:
+        scope_manager.add_type(TypeSymbol(t, define=PrimitiveType(t), parameters=[]))
+    # scope_manager.add_type(TypeSymbol("Int", define=PrimitiveType("Int")))
+    # scope_manager.add_struct(TypeSymbol("String"))
+    # scope_manager.add_struct(TypeSymbol("Float"))
+    # scope_manager.add_struct(TypeSymbol("Bool"))
+    # scope_manager.add_struct(TypeSymbol("Unit"))
+    # scope_manager.global_scope.add(FunctionSymbol("echo", FunctionSignature((Type("Any"),), Type("Unit")), native_call=print))
+    # scope_manager.add_trait(
+    #     TraitSymbol(
+    #         "Write",
+    #         "T",
+    #         {
+    #             'toString': FunctionSignature((), Type("String"), True)
+    #         }
+    #     )
+    # )
+    # scope_manager.add_trait(
+    #     TraitSymbol(
+    #         "Read",
+    #         "T",
+    #         {
+    #             'toString': FunctionSignature((Type("String"),), Type("T"), True)
+    #         }
+    #     )
+    # )
 
 
 def type_check(expect_type: Type|TraitConstraintsType, actual_type: Type, scope: Scope) -> bool|Set[str]:
@@ -125,4 +168,5 @@ def indent(strings: List[str]|str, size=1) -> str:
     if isinstance(strings, str):
         strings = strings.split("\n")
     return "\n".join([f"{'    ' * size}{s}" for s in strings])
+
 

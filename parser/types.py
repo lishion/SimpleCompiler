@@ -97,8 +97,8 @@ def resolve(t: Type, scope: 'Scope'):
     if isinstance(t, Type):
         if is_primitive(t.name):
             return t
-        structure = scope.lookup_type(t.name)
-        return StructureType({name: resolve(t, scope) for name, t in structure.type_def.types.items()})
+        structure = scope.lookup_struct(t.name)
+        return StructureType({name: resolve(t, scope) for name, t in structure.fields.types.items()})
     return StructureType({name: resolve(t1, scope) for name, t1 in t.types.items()})
 
 

@@ -10,7 +10,7 @@ from parser.expr import parse_proc
 from parser.node import *
 from parser.scope import ScopeManager
 from parser.utils import init_global_scope
-from parser.visitor import PositionVisitor, SymbolVisitor, SymbolDefinitionVisitor, ReferenceResolveVisitor
+from parser.visitor1 import PositionVisitor, SymbolVisitor, SymbolDefinitionVisitor, ReferenceResolveVisitor
 
 
 def mock_binary_node(l, r):

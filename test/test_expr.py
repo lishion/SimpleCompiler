@@ -8,7 +8,7 @@ from lexer.lexer import BaseLexer
 from grammer import TOKENS
 from parser.scope import ScopeManager
 from parser.types import FunctionSignature
-from parser.visitor import SymbolVisitor, ReferenceResolveVisitor, EvalVisitor, PositionVisitor, SymbolDefinitionVisitor
+from parser.visitor1 import SymbolVisitor, ReferenceResolveVisitor, EvalVisitor, PositionVisitor, SymbolDefinitionVisitor
 from parser.utils import init_global_scope
 from error.reporter import SourceCodeMaker, ErrorReporter
 from runtime.data import MetaManager

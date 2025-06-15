@@ -1,5 +1,5 @@
 from unittest import TestCase
-from parser.symbol import FunctionOverload
+
 
 class TestFunctionOverload(TestCase):
 

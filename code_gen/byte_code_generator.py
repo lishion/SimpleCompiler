@@ -3,11 +3,11 @@ from typing import List, Tuple, Any
 from bytecode import ConcreteBytecode, ConcreteInstr
 
 from code_gen.utils import generate_unique_index
-from parser.node import LiteralNode, VarNode, AssignNode, BinaryOpNode, ProcNode, FuncDefNode, FunctionCallNode, \
-    BlockNode, ReturnNode, VarDefNode, DataInitNode, AttributeNode, TraitImplNode, IfStatement, LoopStatement, \
+from parser.node import LiteralNode, VarNode, AssignNode, BinaryOpNode, ProcNode, FunctionDefNode, FunctionCallNode, \
+    BlockNode, ReturnNode, VarDefNode, StructInitNode, AttributeNode, TraitImplNode, IfStatement, LoopStatement, \
     ContinueOrBreak
 from parser.types import VarType
-from parser.visitor import Visitor
+from parser.visitor1 import Visitor
 from dataclasses import dataclass, field
 from bytecode.instr import Compare
 from code_gen.ir import CodeRepr, ByteCodes, ConcreteBytecodeConverter, Comment, repr_to_bytecode, Label
@@ -115,15 +115,15 @@ class BytecodeGenerateVisitor(Visitor):
 
 
     def visit_var(self, node: 'VarNode'):
-        if node.identifier.name == "echo":
+        if node.identifier.string == "echo":
             return [CodeRepr(ByteCodes.LOAD_GLOBAL, name="echo")]
-        return [CodeRepr(ByteCodes.LOAD_FAST, var=node.identifier.name)]
+        return [CodeRepr(ByteCodes.LOAD_FAST, var=node.identifier.string)]
 
 
     def visit_assign(self, node: 'AssignNode'):
         res = []
         res += node.assign_expr.accept(self)
-        res.append(CodeRepr(ByteCodes.STORE_FAST, var=node.var.identifier.name))
+        res.append(CodeRepr(ByteCodes.STORE_FAST, var=node.var.identifier.string))
         return res
 
     def visit_proc(self, node: 'ProcNode'):
@@ -188,17 +188,17 @@ class BytecodeGenerateVisitor(Visitor):
     def visit_loop(self, node: 'LoopStatement'):
         pass
 
-    def visit_func_def(self, node: 'FuncDefNode'):
+    def visit_function_def(self, node: 'FunctionDefNode'):
 
         func_def_bytecodes = [
-            Comment(f"func def of '{node.name.name}' start")
+            Comment(f"func def of '{node.name.string}' start")
         ]
         func_def_bytecodes += node.body.accept(self)
-        func_def_bytecodes.append(Comment(f"func def of '{node.name.name}' end\n\n"))
+        func_def_bytecodes.append(Comment(f"func def of '{node.name.string}' end\n\n"))
 
         func_bc = repr_to_bytecode(func_def_bytecodes)
         func_bc.argcount = len(node.args) + 1 if node.trait_node else len(node.args)
-        func_bc.name = node.name.name
+        func_bc.string = node.name.string
         func_obj = func_bc.to_code()
 
         res = []
@@ -213,12 +213,12 @@ class BytecodeGenerateVisitor(Visitor):
             res.append(CodeRepr(ByteCodes.BINARY_SUBSCR))
 
             res.append(Comment("sotre function to global vtable"))
-            res.append(CodeRepr(ByteCodes.LOAD_CONST, const=node.name.name))
+            res.append(CodeRepr(ByteCodes.LOAD_CONST, const=node.name.string))
             res.append(CodeRepr(ByteCodes.STORE_SUBSCR))
 
         else:
             res.append(CodeRepr(ByteCodes.LOAD_CONST, const=func_obj))
-            res.append(CodeRepr(ByteCodes.STORE_FAST, var=node.name.name))
+            res.append(CodeRepr(ByteCodes.STORE_FAST, var=node.name.string))
 
         return res
 
@@ -226,7 +226,7 @@ class BytecodeGenerateVisitor(Visitor):
         res = []
         if node.init_expr:
             res += node.init_expr.accept(self)
-            res.append(CodeRepr(ByteCodes.STORE_FAST, var = node.var_node.name))
+            res.append(CodeRepr(ByteCodes.STORE_FAST, var = node.var_node.string))
         return res
 
     def visit_type(self, node: 'TypeNode'):
@@ -244,11 +244,11 @@ class BytecodeGenerateVisitor(Visitor):
     def visit_identifier(self, node: 'IdNode'):
         pass
 
-    def visit_type_init(self, node: 'DataInitNode'):
-        key_names = tuple([expr.var.identifier.name for expr in node.body] + ['$__vtable__'])
+    def visit_type_init(self, node: 'StructInitNode'):
+        key_names = tuple([expr.var.identifier.string for expr in node.body] + ['$__vtable__'])
 
         res: List[CodeRepr|Comment] = [
-            Comment("start to create a object")
+            Comment("start to create an object")
         ]
         for assign in node.body:
             res += assign.assign_expr.accept(self)
@@ -308,12 +308,12 @@ class BytecodeGenerateVisitor(Visitor):
 
         res.append(Comment("get method object from vtable"))
         res.append(CodeRepr(ByteCodes.LOAD_ATTR, name='get', need_shift=True, flag=True))
-        res.append(CodeRepr(ByteCodes.LOAD_CONST, const=node.attr.name))
+        res.append(CodeRepr(ByteCodes.LOAD_CONST, const=node.attr.string))
 
         res.append(Comment("set the default value to attr start"))
         res += data_bytes
         res.append(CodeRepr(ByteCodes.LOAD_ATTR, name='get', need_shift=True, flag=True))
-        res.append(CodeRepr(ByteCodes.LOAD_CONST, const=node.attr.name))
+        res.append(CodeRepr(ByteCodes.LOAD_CONST, const=node.attr.string))
         res.append(CodeRepr(ByteCodes.CALL, op_num=1))
         res.append(Comment("set the default value to attr end"))
         res.append(CodeRepr(ByteCodes.CALL, op_num=2))
@@ -343,7 +343,7 @@ class BytecodeGenerateVisitor(Visitor):
 
     def visit_trait_impl(self, node: 'TraitImplNode'):
         res = []
-        for node in node.impls:
+        for node in node.functions:
             res += node.accept(self)
         return res
 

@@ -31,6 +31,7 @@ TOKENS.create_by_string("break")
 TOKENS.create_by_string("continue")
 TOKENS.create_by_string("true")
 TOKENS.create_by_string("false")
+TOKENS.create_by_string("struct")
 TOKENS.create(
     Expression.char("#") + Expression.any_char(['\n']).star(),
     "comment"

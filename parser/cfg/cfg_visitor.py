@@ -1,6 +1,5 @@
 from error.reporter import ErrorReporter
 from parser.cfg.return_check import check_return
-from parser.visitor import Visitor
 from parser.cfg.cfg_node import BasicBlock
 from parser.node import *
 
@@ -63,12 +62,12 @@ class CFGVisitor(Visitor):
         entry_block.next_blocks.append(body_exit_block)
         return entry_block, body_exit_block
 
-    def visit_func_def(self, node: 'FuncDefNode'):
+    def visit_function_def(self, node: 'FunctionDefNode'):
         return node.body.accept(self)
 
     def visit_proc(self, node: 'ProcNode'):
         for stmt in node.children:
-            if isinstance(stmt, FuncDefNode):
+            if isinstance(stmt, FunctionDefNode):
                 entry_node, _ = stmt.accept(self)
                 if check_return(entry_node):
                     raise TypeError("missing return statement\n" + self.reporter.mark(stmt.name))
@@ -76,10 +75,10 @@ class CFGVisitor(Visitor):
     def visit_var_def(self, node: 'VarDefNode'):
         pass
 
-    def visit_type(self, node: 'TypeNode'):
+    def visit_type(self, node: 'StructNode'):
         pass
 
-    def visit_type_def(self, node: 'TypeNode'):
+    def visit_type_def(self, node: 'StructNode'):
         pass
 
     def visit_return(self, node: 'ReturnNode'):
@@ -88,7 +87,7 @@ class CFGVisitor(Visitor):
     def visit_identifier(self, node: 'IdNode'):
         pass
 
-    def visit_type_init(self, node: 'DataInitNode'):
+    def visit_struct_init(self, node: 'StructInitNode'):
         pass
 
     def visit_function_type(self, node: 'FunctionTypeNode'):
