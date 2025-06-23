@@ -1,6 +1,7 @@
 import dataclasses
 from abc import abstractmethod
-from typing import Dict, Any, Callable
+from collections import defaultdict
+from typing import Dict, Any, Callable, DefaultDict
 from dataclasses import field
 
 
@@ -25,7 +26,7 @@ class CodeFunctionObject(FunctionObject):
 @dataclasses.dataclass
 class DataMeta:
     name: str
-    vtable: Dict[str, FunctionObject] = field(default_factory=dict)
+    vtable: DefaultDict[str, DefaultDict[str, FunctionObject]] = field(default_factory=lambda: defaultdict(defaultdict))
 
 
 class DataObject:
@@ -33,7 +34,7 @@ class DataObject:
         self.data = data
         self.meta: DataMeta = meta
 
-    def get_function(self, name: str) -> FunctionObject:
+    def get_function(self, name: str) -> DefaultDict[str, FunctionObject]:
         return self.meta.vtable.get(name)
 
     def attr(self, name: str) -> Any:
@@ -45,6 +46,7 @@ class MetaManager:
 
     def __init__(self):
         self.metas: Dict[str, DataMeta] = {}
+        self.globals = {}
 
     def create_object(self, name: str, data: Dict[str, Any]) -> DataObject:
         meta = self.metas[name]
@@ -53,7 +55,7 @@ class MetaManager:
     def add_meta(self, meta: DataMeta):
         self.metas[meta.name] = meta
 
-    def get_meta(self, name: str) -> DataMeta:
+    def get_or_create_meta(self, name: str) -> DataMeta:
         if name not in self.metas:
             self.metas[name] = DataMeta(name)
         return self.metas[name]

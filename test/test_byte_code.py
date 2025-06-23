@@ -2,7 +2,7 @@ from unittest import TestCase
 
 from bytecode import ConcreteBytecode, ConcreteInstr
 
-from code_gen.indent import PythonCodeGenerator
+from code_gen.script import PythonCodeGenerator
 from parser.expr import parse_proc
 from lexer.lexer import BaseLexer
 from grammer import TOKENS

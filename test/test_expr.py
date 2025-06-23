@@ -2,7 +2,7 @@ import dis
 from unittest import TestCase
 
 from code_gen.byte_code_generator import BytecodeGenerateVisitor
-from code_gen.indent import PythonCodeGenerator
+from code_gen.script import PythonCodeGenerator
 from parser.expr import parse_proc
 from lexer.lexer import BaseLexer
 from grammer import TOKENS

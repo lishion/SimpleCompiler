@@ -2,7 +2,7 @@ from typing import List, Optional
 from dataclasses import dataclass
 
 from parser.symbol_type import FunctionTypeRef, StructType, StructTypeRef, TraitTypeRef, TypeRef, PrimitiveType, \
-    TypeVar, FunctionType
+    FunctionType, TypeVar
 
 
 @dataclass
@@ -12,7 +12,7 @@ class Symbol:
 @dataclass
 class VarSymbol(Symbol):
     type_ref: TypeRef
-    type_deref: Optional[PrimitiveType | StructType | TypeVar]=None
+    type_deref: Optional[PrimitiveType | StructType]=None
 
 @dataclass
 class FunctionSymbol(Symbol):
@@ -22,11 +22,11 @@ class FunctionSymbol(Symbol):
 @dataclass
 class TypeSymbol(Symbol):
     define: StructTypeRef|PrimitiveType
-    parameters: List[TypeRef]
+    parameters: List[TypeRef|TypeVar]
 
 @dataclass
 class GenericParamSymbol(Symbol):
-    define: TypeRef
+    define: TypeVar
 
 @dataclass
 class TraitSymbol(Symbol):

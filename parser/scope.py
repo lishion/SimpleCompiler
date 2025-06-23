@@ -1,8 +1,10 @@
+import copy
 from typing import Optional, Dict
 
 from error.exception import DuplicateDefineError
 from parser.symbol import *
 from parser.symbol_type import TraitImpl, TraitRef
+
 
 
 class Scope:
@@ -171,8 +173,50 @@ class TraitImpls:
                 return impl
         return None
 
+    def _is_type_match(self, r1: TypeRef|TypeVar, r2: TypeRef|TypeVar) -> bool:
+        if r2.is_var:
+            if not r2.constraints:
+                return True
+            else:
+                for constraint in r2.constraints:
+                    if not self.get_impl(r1, constraint):
+                        return False
+        if r1.name != r2.name:
+            return False
+        elif r1.parameters:
+            if len(r1.parameters) != len(r2.parameters):
+                return False
+            for r1, r2 in zip(r1.parameters, r2.parameters):
+                if not self._is_type_match(r1, r2):
+                    return False
+        return True
+
     def get_impl_by_type(self, type_ref: TypeRef) -> List[TraitImpl]:
-        return [impl for impl in self.trait_impls if impl.target_type == type_ref]
+        from parser.visitor.type_binder import TypeBinder
+        res = []
+        for impl in self.trait_impls:
+            if self._is_type_match(type_ref, impl.target_type):
+                type_binder = TypeBinder(self)
+                type_binder.resolve(impl.target_type,  type_ref)
+                bind_trait = type_binder.bind(impl.trait)
+                res_params = []
+                for p in impl.type_parameters:
+                    if bind_type := type_binder.get_binds().get(p):
+                        if bind_type.is_var:
+                            res_params.append(bind_type)
+                    else:
+                        res_params.append(p)
+                bind_impl = TraitImpl(
+                    bind_trait,
+                    type_ref,
+                    res_params
+                )
+                for func_name, func in impl.functions.items():
+                    f = type_binder.bind(func)
+                    f.association_impl = bind_impl
+                    bind_impl.functions[func_name] = f
+                res.append(bind_impl)
+        return res
 
     def add_impl(self, impl: TraitImpl):
         self.trait_impls.append(impl)

@@ -1,14 +1,13 @@
 from typing import List, Any, Tuple, Optional, Union
 from abc import ABC, abstractmethod
-from parser.scope import Scope
-from parser.symbol_type import TraitImpl
-from parser.types import FunctionSignature
+# from parser.scope import Scope
+from parser.symbol_type import TraitImpl, TypeRef
 from parser.visitor.visitor import Visitor
 
 class ASTNode(ABC):
 
     def __init__(self):
-        self.scope: Optional[Scope] = None
+        self.scope: Optional['Scope'] = None
         self.start_pos = None
         self.end_pos = None
 
@@ -191,9 +190,10 @@ class FunctionCallNode(ASTNode):
         super().__init__()
         self.call_source = call_source
         self.args: List[ASTNode] = args or []
-        self.signature: 'FunctionSignature' = None
-        self.symbol: 'FunctionSymbol' = None
         self.is_trait_function = False
+        self.define_ast: FunctionDefNode = None
+        self.trait_impl: 'TraitImpl' = None
+        self.type_binds: dict[str, Any] = {}
 
 
     def accept(self, visitor: 'Visitor'):
@@ -350,6 +350,7 @@ class StructInitNode(ASTNode):
         super().__init__()
         self.type_name = type_name
         self.body = body
+        self.type_ref: TypeRef = None
 
     def accept(self, visitor: 'Visitor') -> Any:
         return visitor.visit_struct_init(self)

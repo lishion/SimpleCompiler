@@ -1,16 +1,14 @@
 from typing import Dict
-
+from parser.symbol_type import TypeRef, FunctionTypeRef, TraitRef, TypeVar
+from parser.visitor.utils import type_constraint_validate, bind_type
 from parser.scope import TraitImpls
-from parser.symbol_type import TypeRef
-from parser.visitor.utils import type_constraint_validate
-
 
 class TypeBinder:
-    def __init__(self, trait_impls: TraitImpls):
+    def __init__(self, trait_impls: 'TraitImpls'):
         self._trait_impls = trait_impls
-        self._binds: Dict[str, TypeRef] = {}
+        self._binds: Dict[TypeVar, TypeRef|TypeVar] = {}
 
-    def resolve(self, defined_type: TypeRef, real_type: TypeRef):
+    def resolve(self, defined_type: TypeRef|TypeVar, real_type: TypeRef|TypeVar):
         """
         given defined_type like A<B<T1, T2>> and real_type A<B<String, Int>>
         bind String to T1 and Int to T2
@@ -24,31 +22,18 @@ class TypeBinder:
         """
         return self._resolve_type(defined_type, real_type)
 
-    def bind(self, type_ref):
+    def bind[T: TypeRef|FunctionTypeRef|TraitRef](self, type_ref: TypeRef|FunctionTypeRef|TraitRef) -> T:
         """
         bind type according to resolve method
         give T=Int, type_ref = A<B<T>> then output is A<B<Int>>
         :param type_ref: type need to bind
         :return: type after bind
         """
-        def _bind(ref: TypeRef):
-            if (deref := self._binds.get(ref.name)) is not None:
-                return deref
-            elif ref.is_primitive_type:
-                return ref
-            elif ref.parameters:
-                new_ref = TypeRef(
-                    ref.name,
-                    parameters=[_bind(r) for r in ref.parameters]
-                )
-                return new_ref
-            else:
-                return ref
-        return _bind(type_ref)
+        return bind_type(type_ref, self._binds)
 
-    def _resolve_type(self, etype: TypeRef, rtype: TypeRef):
-        if etype.is_var:
-            if exists_bind := self._binds.get(etype.name):
+    def _resolve_type(self, etype: TypeRef|TypeVar, rtype: TypeRef|TypeVar):
+        if TypeVar.is_a_var(etype):
+            if exists_bind := self._binds.get(etype):
                 if exists_bind == rtype:
                     return
                 else:
@@ -56,7 +41,7 @@ class TypeBinder:
                         f"type {etype.name} is already bind to {exists_bind} and can not bind to {rtype} again")
             for constraint in etype.constraints:
                 type_constraint_validate(rtype, constraint, self._trait_impls)
-            self._binds[etype.name] = rtype
+            self._binds[etype] = rtype
         else:
             if etype.name != rtype.name:
                 raise TypeError(f"expect type {etype.name} but got {rtype.name}")

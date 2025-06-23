@@ -1,4 +1,4 @@
-from code_gen.indent import PythonCodeGenerator
+from code_gen.script import PythonCodeGenerator
 from error.exception import UndefinedError, DuplicateDefineError, TypeConstraintError, TypeError
 from parser.stack import Stack
 from parser.symbol import VarSymbol, TypeSymbol, FunctionSymbol, Symbol, TBDSymbol, TraitSymbol

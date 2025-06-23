@@ -3,7 +3,7 @@ from parser.node import ASTNode, BinaryOpNode, LiteralNode, BlockNode, FunctionC
     LitArrayNode, LitDictNode, IfStatement, LoopStatement, FunctionDefNode, ProcNode, AssignNode, VarDefNode, \
     StructDefNode, VarNode, Nothing, ReturnNode, StructInitNode, FunctionTypeNode, TraitNode, TraitDefNode, \
     TraitFunctionNode, TraitImplNode, AttributeNode, ContinueOrBreak, TypeVarNode, \
-    TypeAnnotation, TypeInstance, TypeConstraint, TraitInstance, DynTraitNode, TraitConstraintNode
+    TypeAnnotation, TypeInstance, TypeConstraint, TraitInstance, TraitConstraintNode
 from lexer.lexer import Lexer
 from typing import Optional, List, Type
 from parser.utils import RepeatParser, combiner

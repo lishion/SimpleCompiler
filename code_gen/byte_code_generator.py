@@ -2,12 +2,12 @@ from typing import List, Tuple, Any
 
 from bytecode import ConcreteBytecode, ConcreteInstr
 
-from code_gen.utils import generate_unique_index
+
 from parser.node import LiteralNode, VarNode, AssignNode, BinaryOpNode, ProcNode, FunctionDefNode, FunctionCallNode, \
     BlockNode, ReturnNode, VarDefNode, StructInitNode, AttributeNode, TraitImplNode, IfStatement, LoopStatement, \
     ContinueOrBreak
 from parser.types import VarType
-from parser.visitor1 import Visitor
+from parser.visitor.visitor import Visitor
 from dataclasses import dataclass, field
 from bytecode.instr import Compare
 from code_gen.ir import CodeRepr, ByteCodes, ConcreteBytecodeConverter, Comment, repr_to_bytecode, Label
@@ -212,7 +212,7 @@ class BytecodeGenerateVisitor(Visitor):
             res.append(CodeRepr(ByteCodes.LOAD_CONST, const=target_type_name))
             res.append(CodeRepr(ByteCodes.BINARY_SUBSCR))
 
-            res.append(Comment("sotre function to global vtable"))
+            res.append(Comment("store function to global vtable"))
             res.append(CodeRepr(ByteCodes.LOAD_CONST, const=node.name.string))
             res.append(CodeRepr(ByteCodes.STORE_SUBSCR))
 
@@ -244,7 +244,7 @@ class BytecodeGenerateVisitor(Visitor):
     def visit_identifier(self, node: 'IdNode'):
         pass
 
-    def visit_type_init(self, node: 'StructInitNode'):
+    def visit_struct_init(self, node: 'StructInitNode'):
         key_names = tuple([expr.var.identifier.string for expr in node.body] + ['$__vtable__'])
 
         res: List[CodeRepr|Comment] = [
