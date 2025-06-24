@@ -4,8 +4,8 @@ from lexer.lexer import Lexer
 from parser.node import  Nothing, FunctionTypeNode, TraitFunctionNode, VarDefNode, \
     FunctionDefNode, StructDefNode, TraitConstraintNode, TypeAnnotation, TypeVarNode
 from parser.scope import Scope, ScopeManager
-from parser.symbol import Symbol, TypeSymbol, FunctionSymbol, TraitSymbol
-from parser.symbol_type import PrimitiveType, TypeRef
+from parser.symbol import Symbol, TypeSymbol, FunctionSymbol, TraitSymbol, VarSymbol
+from parser.symbol_type import PrimitiveType, TypeRef, FunctionTypeRef
 from parser.types import Type, FunctionSignature, StructureType, TraitConstraintsType, TypeVar
 
 
@@ -113,16 +113,23 @@ def combiner(*parsers):
 #
 #     return helper(ast_node)
 
+PRIMITIVE_TYPE_NAME = [
+    "Int",
+    "String",
+    "Float",
+    "Bool",
+    "Unit",
+    "Any"
+]
+
 def init_global_scope(scope_manager: ScopeManager):
-    PRIMITIVE_TYPE_NAME = [
-        "Int",
-        "String",
-        "Float",
-        "Bool",
-        "Unit"
-    ]
+
     for t in PRIMITIVE_TYPE_NAME:
         scope_manager.add_type(TypeSymbol(t, define=PrimitiveType(t), parameters=[]))
+    scope_manager.add_symbol(FunctionSymbol("echo", FunctionTypeRef("echo", [TypeRef("any")], TypeRef("Unit"))))
+    scope_manager.add_symbol(FunctionSymbol("as_string", FunctionTypeRef("as_string", [TypeRef("any")], TypeRef("String"))))
+    scope_manager.add_symbol(FunctionSymbol("as_float", FunctionTypeRef("as_float", [TypeRef("any")], TypeRef("Float"))))
+
     # scope_manager.add_type(TypeSymbol("Int", define=PrimitiveType("Int")))
     # scope_manager.add_struct(TypeSymbol("String"))
     # scope_manager.add_struct(TypeSymbol("Float"))

@@ -9,7 +9,7 @@ from parser.scope import ScopeManager, TraitImpls
 from parser.symbol import TypeSymbol, TraitSymbol, GenericParamSymbol, FunctionSymbol, VarSymbol
 from parser.visitor import utils
 from parser.visitor.type_binder import TypeBinder
-from parser.visitor.utils import type_constraint_validate, to_lookup
+from parser.visitor.utils import type_constraint_validate, to_lookup, get_type_name
 from copy import copy
 
 class TypeDefVisitor(Visitor):
@@ -70,7 +70,7 @@ class TypeDefVisitor(Visitor):
     def visit_trait_def(self, node: 'TraitDefNode'):
         self.bind_scope(node)
         parameters = [utils.get_type_ref_from_type_var(param) for param in node.name_and_param.parameters]
-        parameters_lookup = to_lookup(parameters, lambda p: p.name)
+        parameters_lookup = to_lookup(parameters, get_type_name)
         symbol = TraitSymbol(
             name=node.name_and_param.name,
             define=TraitTypeRef(node.name_and_param.name, parameters=parameters),
@@ -83,14 +83,13 @@ class TypeDefVisitor(Visitor):
                 param.accept(self)
             for param in node.functions:
                 func = utils.get_function_ref(param, parameters_lookup)
-                func.association_trait = symbol.define
+                # func.association_trait = symbol.define
                 symbol.define.functions[func.name] = func
             utils.visit_all(node.functions, self)
 
 
     def visit_trait_impl(self, node: 'TraitImplNode'):
         self.bind_scope(node)
-
 
         """
         trait A<T>{
@@ -108,18 +107,19 @@ class TypeDefVisitor(Visitor):
         """
 
         with self.scope_manager.new_scope():
-
             node.trait.accept(self)
             node.target_type.accept(self)
 
-            utils.visit_all(node.type_parameters, self)
-            utils.visit_all(node.functions, self)
+
 
             params = [utils.get_type_ref_from_type_var(x) for x in node.type_parameters]
             params_lookup = to_lookup(params, lambda p: p.name)
 
             trait_ref = utils.get_trait_ref(node.trait, params_lookup)
             target_type = utils.get_type_ref(node.target_type, params_lookup)
+
+            utils.visit_all(node.type_parameters, self)
+            utils.visit_all(node.functions, self)
 
             self.scope_manager.add_symbol(VarSymbol("self", target_type))
 
@@ -150,14 +150,16 @@ class TypeDefVisitor(Visitor):
 
     def visit_function_def(self, node: 'FunctionDefNode'):
         self.bind_scope(node)
-        parameters = [utils.get_type_ref_from_type_var(param) for param in node.type_parameters]
-        parameters_lookup = to_lookup(parameters, lambda p: p.name)
-        symbol =  FunctionSymbol(
-                node.name.string,
-                utils.get_function_ref(node, parameters_lookup)
-            )
-        symbol.type_ref.association_ast = node
-        self.scope_manager.add_symbol(symbol)
+        parameters_lookup = {}
+        if not node.trait_node:
+            parameters = [utils.get_type_ref_from_type_var(param) for param in node.type_parameters]
+            parameters_lookup = to_lookup(parameters, lambda p: p.name)
+            symbol =  FunctionSymbol(
+                    node.name.string,
+                    utils.get_function_ref(node, parameters_lookup)
+                )
+            symbol.type_ref.association_ast = node
+            self.scope_manager.add_symbol(symbol)
         with self.scope_manager.new_scope():
             self.bind_scope(node.body)
             for param in node.type_parameters:
@@ -270,11 +272,15 @@ class TypeDetailVisitor(Visitor):
 
         stype = infer_type
 
+        node.type_ref = stype
+
         assert stype is not None
         if isinstance(stype, TypeRef):
             node.scope.add_var(VarSymbol(node.var_node.string, stype))
         elif isinstance(stype, FunctionTypeRef):
             node.scope.add_var(FunctionSymbol(node.var_node.string, stype))
+        elif isinstance(stype, TypeVar):
+            node.scope.add_var(VarSymbol(node.var_node.string, stype))
         return stype
 
     def visit_function_type(self, node: 'FunctionTypeNode'):
@@ -292,6 +298,8 @@ class TypeDetailVisitor(Visitor):
         for stmt in node.body.stmts:
             if isinstance(stmt, ReturnNode):
                 return_type = stmt.accept(self)
+                stmt.expr_type = return_type
+                stmt.expect_type = type_ref.return_type
                 utils.validate_return_type(return_type, symbol.type_ref.return_type, self.trait_impls)
             else:
                 stmt.accept(self)
@@ -332,11 +340,23 @@ class TypeDetailVisitor(Visitor):
             for arg, defined_type in zip(node.args, define.args):
                 expr_type = arg.accept(self)
                 type_binder.resolve(defined_type, expr_type)
+
             impl = define.association_impl
             trait_ref = TraitRef(impl.trait.name, [type_binder.bind(x) for x in impl.trait.parameters]) if impl else None
             ref = type_binder.bind(define.return_type)
+
+            # if ref.name == "ANON_TYPE_VAR":
+            #     for statement in define.association_ast.body.stmts:
+            #         if isinstance(statement, ReturnNode):
+            #             return_type = statement.accept(self)
+            #             for impl in self.trait_impls.get_impl_by_type(return_type):
+            #                 if hit := impl.functions.get(define.association_ast.name):
+            #                     ref = impl
+
             node.type_binds = type_binder.get_binds()
             node.define_ast = define.association_ast
+            node.dyn_trait = define.association_trait
+            node.call_ref = define
             if trait_ref:
                 node.trait_impl = TraitImpl(
                     trait=trait_ref,
@@ -389,6 +409,8 @@ class TypeDetailVisitor(Visitor):
             trait_ref = TraitRef(impl.trait.name,
                                  [final_builder.bind(x) for x in impl.trait.parameters]) if impl else None
             node.define_ast = final_res.association_ast
+            node.dyn_trait = define.association_trait
+            node.call_ref = define
             if trait_ref:
                 node.trait_impl = TraitImpl(
                     trait=trait_ref,
@@ -396,6 +418,7 @@ class TypeDetailVisitor(Visitor):
                     type_parameters=impl.type_parameters,
                     functions=impl.functions
                 )
+
             return utils.de_ref(final_res.return_type, node.scope)
         else:
             raise TypeError(f"{define.name} is not callable")
@@ -433,7 +456,6 @@ class TypeDetailVisitor(Visitor):
         for function in node.functions:
             # 计算 function 的实现类型
             impl_function_ref = utils.get_function_ref(function, type_lookup)
-            impl_function_ref.association_trait = trait_impl.trait
             impl_function_ref.association_ast = function
             impl_function_ref.association_impl = trait_impl
 
@@ -452,7 +474,8 @@ class TypeDetailVisitor(Visitor):
             if not utils.equal_without_constraint(impl_function_ref.return_type, trait_function_def.return_type):
                 raise Exception(
                     f"function '{function.name.string}' not match sign define in trait {node.trait_name}, expect: {trait_function_def.return_type}, but got {impl_function_ref.return_type}")
-
+            for arg, arg_type in zip(function.args, impl_function_ref.args):
+                function.body.scope.add_var(VarSymbol(arg.var_node.string, arg_type))
             for stmt in function.body.stmts:
                 if isinstance(stmt, ReturnNode):
                     return_type = stmt.accept(self)
@@ -488,27 +511,30 @@ class TypeDetailVisitor(Visitor):
                 for trait in type_ref.constraints:
                     trait_symbol = node.scope.lookup_traits(trait.name)
                     binds = {}
-                    for param, type_ref in zip(trait_symbol.define.parameters, trait.parameters):
-                        binds[param.name] = type_ref
+                    for const_trait, defined_type in zip(trait.parameters, trait_symbol.define.parameters):
+                        binds[defined_type] = const_trait
                     if func := trait_symbol.define.functions.get(node.attr.string):
                         return FunctionTypeRef(
                             name=func.name,
                             args=[utils.bind_type(x, binds) for x in func.args],
-                            return_type=utils.bind_type(func.return_type, binds)
+                            return_type=utils.bind_type(func.return_type, binds),
+                            association_trait=trait,
+                            call_source_type=type_ref
                         )
                 raise TypeError(f"function {node.attr.string} is not defined for constraint: {type_ref.constraints}")
             else:
+                #print(type_ref)
                 raise TypeError(f"attribute not available for no constraint generic type")
-        if type_ref.struct_ref is None:
-            raise TypeError(f"type {type_ref.name} is not a struct")
         # 如果 struct 中没找到对应的 attr，就尝试去 trait 中寻找方法
-        if node.attr.string not in type_ref.struct_ref.fields:
+        if type_ref.struct_ref and node.attr.string in type_ref.struct_ref.fields:
+            return type_ref.struct_ref.fields[node.attr.string]
+        else:
             impl_traits = self.trait_impls.get_impl_by_type(type_ref)
             function_hits = []
             for impl in impl_traits:
                 if hit := impl.functions.get(node.attr.string):
+                    hit.call_source_type = type_ref
                     function_hits.append(hit)
             if function_hits:
                 return MultiResolvedFunction(function_hits) if len(function_hits) > 1 else function_hits[0]
-            raise TypeError(f"Attribute {node.attr.string} is not defined in type {type_ref.name}")
-        return type_ref.struct_ref.fields[node.attr.string]
+            raise TypeError(f"Attribute {node.attr.string} is not defined in type {type_ref}")

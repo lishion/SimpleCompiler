@@ -23,6 +23,16 @@ class CodeFunctionObject(FunctionObject):
     def __init__(self, code: Callable):
         self.code = code
 
+
+class NameFunctionObject(FunctionObject):
+
+    def call(self, *args, **kwargs):
+        return eval(self.function_name, self.globals)(*args, **kwargs)
+
+    def __init__(self, function_name: str, globals: Dict[str, Any]):
+        self.function_name = function_name
+        self.globals = globals
+
 @dataclasses.dataclass
 class DataMeta:
     name: str

@@ -19,7 +19,7 @@ def get_type_ref(ast: 'TypeInstance', type_var_names: Dict[str, TypeVar|TypeRef]
     type_var_names = type_var_names or dict()
     def helper(type_instance: TypeInstance) -> TypeRef|TypeVar:
         if isinstance(type_instance, TraitConstraintNode):
-            raise Exception("impl trait can only be used to return type")
+            raise Exception("impl trait can only be used at return type")
         if type_var := type_var_names.get(type_instance.name):
             return type_var
         ref = TypeRef(type_instance.name)
@@ -51,9 +51,7 @@ def get_trait_ref(ast: 'TypeConstraint', type_var_names: Dict[str, TypeRef|TypeV
 
 
 def get_type_ref_from_type_var(ast: 'TypeVarNode') -> TypeVar:
-    name = ast.name.string
-    constraints = ast.constraints
-    return TypeVar.create(name, mapper(constraints, get_trait_ref))
+    return TypeVar.create(ast.name.string, mapper(ast.constraints, get_trait_ref))
 
 def identity[U](u: U) -> U:
     return u
@@ -75,7 +73,7 @@ def type_constraint_validate(type_ref: TypeRef|TypeVar, constraints: List[TraitR
     if not isinstance(constraints, list):
         constraints = [constraints]
     for constraint in constraints:
-        if TypeVar.is_a_var(constraint):
+        if TypeVar.is_a_var(type_ref):
             if constraint not in type_ref.constraints:
                 raise TypeError(f"Type {type_ref.name}: {type_ref.constraints} does not match constraint {constraint}")
             return False
@@ -95,7 +93,9 @@ def type_constraint_validate(type_ref: TypeRef|TypeVar, constraints: List[TraitR
 def mapper[K, V](iterable: Iterable[K], _map:Callable[[K], V]) -> List[V]:
     return [_map(x) for x in iterable]
 
-def de_ref(type_ref: TypeRef, scope: Scope) -> TypeRef:
+def de_ref(type_ref: TypeRef|TypeVar, scope: Scope) -> TypeRef|TypeVar:
+    if isinstance(type_ref, TypeVar):
+        return type_ref
     if type_ref.is_primitive_type or isinstance(type_ref, PrimitiveType):
         return type_ref
     else:
@@ -158,7 +158,7 @@ def equal_without_constraint(ref1: TypeRef|TypeVar, ref2: TypeRef|TypeVar) -> bo
     return False
 
 def validate_return_type(real_type: TypeRef|TypeVar, expect_type: TypeRef|TypeVar, trait_impl: TraitImpls):
-    if "#" in expect_type.name:
+    if expect_type.name == "ANON_TYPE_VAR":
         type_constraint_validate(real_type, expect_type.constraints, trait_impl)
         return
     if expect_type.is_var:
@@ -172,7 +172,14 @@ def validate_return_type(real_type: TypeRef|TypeVar, expect_type: TypeRef|TypeVa
         validate_return_type(r1, r2, trait_impl)
 
 def get_type_id(type_ref: TypeRef|TraitRef):
-    return str(type_ref).replace("<", "6_").replace(">", "_9")
+    return str(type_ref).replace("<", "_p_").replace(">", "_q_").replace(",", "__").replace(" ", "")
 
 def get_trait_function_name(trait_ref: TraitRef, type_ref: TypeRef, function_name: str) -> str:
     return f"{get_type_id(trait_ref)}___{get_type_id(type_ref)}___{function_name}"
+
+def get_type_name(ref: TypeRef|TypeVar) -> str:
+    return ref.name
+
+def resolve_type_binds(binds: Dict[TypeVar, TypeRef|TypeVar], parent_binds: Dict[TypeVar, TypeRef|TypeVar]) -> Dict[TypeVar, TypeRef|TypeVar]:
+    print(binds, parent_binds)
+    return {type_var: parent_binds.get(bind_type, bind_type) if bind_type.is_var else bind_type  for type_var, bind_type in binds.items()}

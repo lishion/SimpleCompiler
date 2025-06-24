@@ -450,7 +450,7 @@ def parse_trait_def(lexer: Lexer) -> TraitDefNode:
         else:
             return_type = TypeInstance.unit()
         lexer.expect_pop(";")
-        trait_func = TraitFunctionNode(function_name, [VarDefNode(id, type) for id, type in args], return_type)
+        trait_func = TraitFunctionNode(function_name, [VarDefNode(id, type) for id, type in args], return_type, type_node)
         traits.append(trait_func)
     return TraitDefNode(type_node, traits)
 

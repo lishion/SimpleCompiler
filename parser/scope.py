@@ -179,9 +179,12 @@ class TraitImpls:
                 return True
             else:
                 for constraint in r2.constraints:
-                    if not self.get_impl(r1, constraint):
+                    if r1.is_var:
+                        if constraint not in r1.constraints:
+                            return False
+                    elif not self.get_impl(r1, constraint):
                         return False
-        if r1.name != r2.name:
+        elif r1.name != r2.name:
             return False
         elif r1.parameters:
             if len(r1.parameters) != len(r2.parameters):
@@ -214,6 +217,7 @@ class TraitImpls:
                 for func_name, func in impl.functions.items():
                     f = type_binder.bind(func)
                     f.association_impl = bind_impl
+
                     bind_impl.functions[func_name] = f
                 res.append(bind_impl)
         return res

@@ -16,6 +16,8 @@ class TypeVar:
     is_primitive_type = False
 
     def __eq__(self, other: 'TypeVar'):
+        if not isinstance(other, TypeVar):
+            return False
         return other.id == self.id and other.name == self.name
 
     def __hash__(self) -> int:
@@ -125,11 +127,13 @@ class StructType:
 class FunctionTypeRef:
     # from parser.node import FunctionDefNode
     name: Optional[str]
-    args: List['TypeRef']
+    args: List[Union['TypeRef', TypeVar]]
     return_type: 'TypeRef'
     type_parameters: List['TypeRef'] = field(default_factory=list)
     association_impl: Optional['TraitImpl'] = None
+    association_trait: Optional['TraitRef'] = None
     association_ast: Optional['FunctionDefNode'] = None
+    call_source_type: Optional[TypeRef|TypeVar] = None
 
 @dataclass
 class FunctionType:

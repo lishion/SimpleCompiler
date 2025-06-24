@@ -43,6 +43,8 @@ class TypeBinder:
                 type_constraint_validate(rtype, constraint, self._trait_impls)
             self._binds[etype] = rtype
         else:
+            if etype.name.lower() == "any" or rtype.name.lower() == "any":
+                return
             if etype.name != rtype.name:
                 raise TypeError(f"expect type {etype.name} but got {rtype.name}")
             for et, rt in zip(etype.parameters, rtype.parameters):

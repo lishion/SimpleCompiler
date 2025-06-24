@@ -1,7 +1,8 @@
 from typing import List, Any, Tuple, Optional, Union
 from abc import ABC, abstractmethod
 # from parser.scope import Scope
-from parser.symbol_type import TraitImpl, TypeRef
+from parser.symbol_type import TraitImpl, TypeRef, FunctionTypeRef
+from parser.symbol_type import TraitRef
 from parser.visitor.visitor import Visitor
 
 class ASTNode(ABC):
@@ -193,7 +194,9 @@ class FunctionCallNode(ASTNode):
         self.is_trait_function = False
         self.define_ast: FunctionDefNode = None
         self.trait_impl: 'TraitImpl' = None
-        self.type_binds: dict[str, Any] = {}
+        self.dyn_trait: 'TraitRef' = None
+        self.type_binds: dict['TypeVar', Any] = {}
+        self.call_ref: FunctionTypeRef = None
 
 
     def accept(self, visitor: 'Visitor'):
@@ -296,6 +299,7 @@ class VarDefNode(ASTNode):
         self.var_node = var_node
         self.var_type = var_type
         self.init_expr = init_expr
+        self.type_ref = None
 
     def eval(self) -> Any:
         return None
@@ -334,9 +338,11 @@ class ProcNode(ASTNode):
 
 class ReturnNode(ASTNode):
 
-    def __init__(self, expr: ASTNode=None):
+    def __init__(self, expr: ASTNode=None, expr_type=None, expect_type=None):
         super().__init__()
         self.expr = expr
+        self.expr_type = expr_type
+        self.expect_type = expect_type
 
     def eval(self) -> Any:
         pass
@@ -356,11 +362,12 @@ class StructInitNode(ASTNode):
         return visitor.visit_struct_init(self)
 
 class TraitFunctionNode(ASTNode):
-    def __init__(self, name: IdNode, args: List[VarDefNode], return_type: TypeInstance):
+    def __init__(self, name: IdNode, args: List[VarDefNode], return_type: TypeInstance, trait_node: 'TypeAnnotation'):
         super().__init__()
         self.name = name
         self.args = args
         self.return_type = return_type
+        self.trait_node = trait_node
 
     def accept(self, visitor: 'Visitor'):
         return visitor.visit_trait_function(self)
