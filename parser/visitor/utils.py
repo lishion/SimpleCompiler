@@ -1,9 +1,10 @@
 import copy
-from typing import List, Callable, Dict, Iterable
-
+from typing import List, Callable, Dict, Iterable, Tuple
 
 from parser.node import TypeInstance,TypeConstraint, TypeVarNode, TraitFunctionNode, FunctionDefNode, TraitConstraintNode
-from parser.symbol_type import TraitRef, TypeRef, StructTypeRef, PrimitiveType, FunctionTypeRef, TypeVar
+from parser.symbol_type import TraitRef, TypeRef, StructTypeRef, PrimitiveType, FunctionTypeRef, TypeVar, TraitImpl, \
+    ResolvedFunctionRef
+from parser.visitor.type_binder import TypeBinder
 from parser.visitor.visitor import Visitor
 from parser.scope import Scope, TraitImpls
 
@@ -60,28 +61,28 @@ def identity[U](u: U) -> U:
 def to_lookup[K, V](obj: List[K], key_mapper: Callable[[K], V]=identity) -> Dict[V, K]:
     return {key_mapper(k): k for k in obj}
 
-def type_constraint_validate(type_ref: TypeRef|TypeVar, constraints: List[TraitRef]|TraitRef|TypeRef|TypeVar, trait_impls: TraitImpls):
-    if isinstance(constraints, TypeRef) and type_ref != constraints:
-        raise TypeError(f"return type {type_ref} does not match type {constraints}")
-    def verify_constraint(ref1: TypeRef|TypeVar, ref2: TypeRef|TypeVar) -> bool:
-        if TypeVar.is_a_var(ref1):
-            if ref1.constraints != ref2.constraints:
-                raise TypeError(f"constraint not match {ref1.constraints} {ref2.constraints}")
-        else:
-            for param1, para2 in zip(ref1.parameters, ref2.parameters):
-                verify_constraint(param1, para2)
-    if not isinstance(constraints, list):
-        constraints = [constraints]
-    for constraint in constraints:
-        if TypeVar.is_a_var(type_ref):
-            if constraint not in type_ref.constraints:
-                raise TypeError(f"Type {type_ref.name}: {type_ref.constraints} does not match constraint {constraint}")
-            return False
-        impl = trait_impls.get_impl(type_ref, constraint)
-        if not impl:
-            raise TypeError(f"{type_ref} is not implemented trait {constraint}")
-        verify_constraint(type_ref, impl.target_type)
-    return None
+# def type_constraint_validate(type_ref: TypeRef|TypeVar, constraints: List[TraitRef]|TraitRef|TypeRef|TypeVar, trait_impls: TraitImpls):
+#     if isinstance(constraints, TypeRef) and type_ref != constraints:
+#         raise TypeError(f"return type {type_ref} does not match type {constraints}")
+#     def verify_constraint(ref1: TypeRef|TypeVar, ref2: TypeRef|TypeVar):
+#         if TypeVar.is_a_var(ref1):
+#             if ref1.constraints != ref2.constraints:
+#                 raise TypeError(f"constraint not match {ref1.constraints} {ref2.constraints}")
+#         else:
+#             for param1, para2 in zip(ref1.parameters, ref2.parameters):
+#                 verify_constraint(param1, para2)
+#     if not isinstance(constraints, list):
+#         constraints = [constraints]
+#     for constraint in constraints:
+#         if TypeVar.is_a_var(type_ref):
+#             if constraint not in type_ref.constraints:
+#                 raise TypeError(f"Type {type_ref.name}: {type_ref.constraints} does not match constraint {constraint}")
+#             return False
+#         impl = trait_impls.get_impl(type_ref, constraint)
+#         if not impl:
+#             raise TypeError(f"{type_ref} is not implemented trait {constraint}")
+#         verify_constraint(type_ref, impl.target_type)
+#     return None
 
 
 
@@ -100,8 +101,8 @@ def de_ref(type_ref: TypeRef|TypeVar, scope: Scope) -> TypeRef|TypeVar:
         return type_ref
     else:
         struct_type_ref = scope.lookup_type(type_ref.name).define
-        type_binds = {btype.name: dtype for btype, dtype in zip(struct_type_ref.parameters, type_ref.parameters)}
-        type_ref.struct_ref = StructTypeRef(type_ref.name, fields={name: type_binds.get(field.name, field) for name, field in struct_type_ref.fields.items()})
+        type_binds = {btype: dtype for btype, dtype in zip(struct_type_ref.parameters, type_ref.parameters)}
+        type_ref.struct_ref = StructTypeRef(type_ref.name, fields={name: bind_type(field, type_binds) for name, field in struct_type_ref.fields.items()})
         return type_ref
 
 
@@ -115,7 +116,7 @@ def get_struct_ref(ref: TypeRef, scope: Scope) -> TypeRef:
         ref.struct_ref = symbol.define
     return ref
 
-def bind_type[T: TypeRef|FunctionTypeRef|TraitRef](type_ref: T, binds: Dict[TypeVar, TypeRef]) -> T:
+def bind_type[T: TypeRef|FunctionTypeRef|TraitRef|ResolvedFunctionRef](type_ref: T, binds: Dict[TypeVar, TypeRef]) -> T:
     """
     bind type according to binds
     give T=Int, type_ref = A<B<T>> then output is A<B<Int>>
@@ -140,6 +141,13 @@ def bind_type[T: TypeRef|FunctionTypeRef|TraitRef](type_ref: T, binds: Dict[Type
 
     if isinstance(type_ref, TypeRef) or isinstance(type_ref, TypeVar):
         return _bind(type_ref)
+    if isinstance(type_ref, ResolvedFunctionRef):
+        rfunc_ref = copy.copy(type_ref)
+        rfunc_ref.args = mapper(type_ref.args, _bind)
+        rfunc_ref.return_type = _bind(type_ref.return_type)
+        rfunc_ref.association_trait = rfunc_ref.association_trait and bind_type(rfunc_ref.association_trait, binds)
+        rfunc_ref.association_type = rfunc_ref.association_type and bind_type(rfunc_ref.association_type, binds)
+        return rfunc_ref
     elif isinstance(type_ref, TraitRef):
         return TraitRef(
             name=type_ref.name,
@@ -159,9 +167,11 @@ def equal_without_constraint(ref1: TypeRef|TypeVar, ref2: TypeRef|TypeVar) -> bo
 
 def validate_return_type(real_type: TypeRef|TypeVar, expect_type: TypeRef|TypeVar, trait_impl: TraitImpls):
     if expect_type.name == "ANON_TYPE_VAR":
-        type_constraint_validate(real_type, expect_type.constraints, trait_impl)
+        #type_constraint_validate(real_type, expect_type.constraints, trait_impl)
+        if not trait_impl.is_type_match(real_type, expect_type):
+            raise TypeError(f"expect {expect_type.name} but got {real_type.name}")
         return
-    if expect_type.is_var:
+    elif expect_type.is_var:
         if real_type != expect_type:
             raise TypeError(f"expect {expect_type.name} but got {real_type.name}")
         else:
@@ -172,14 +182,27 @@ def validate_return_type(real_type: TypeRef|TypeVar, expect_type: TypeRef|TypeVa
         validate_return_type(r1, r2, trait_impl)
 
 def get_type_id(type_ref: TypeRef|TraitRef):
+    if TypeVar.is_a_var(type_ref):
+        return "0DYN0"
     return str(type_ref).replace("<", "_p_").replace(">", "_q_").replace(",", "__").replace(" ", "")
 
 def get_trait_function_name(trait_ref: TraitRef, type_ref: TypeRef, function_name: str) -> str:
-    return f"{get_type_id(trait_ref)}___{get_type_id(type_ref)}___{function_name}"
+    return f"{get_type_id(trait_ref)}_for_{get_type_id(type_ref)}___{function_name}"
 
 def get_type_name(ref: TypeRef|TypeVar) -> str:
     return ref.name
 
 def resolve_type_binds(binds: Dict[TypeVar, TypeRef|TypeVar], parent_binds: Dict[TypeVar, TypeRef|TypeVar]) -> Dict[TypeVar, TypeRef|TypeVar]:
-    print(binds, parent_binds)
+    #print(binds, parent_binds)
     return {type_var: parent_binds.get(bind_type, bind_type) if bind_type.is_var else bind_type  for type_var, bind_type in binds.items()}
+
+# def bind_impl(impl: TraitImpl, real_trait: TraitRef|None, real_target: TypeRef|None) -> TraitImpl:
+#     if not real_trait and not real_target:
+#         raise TypeError("real_trait and real_target is both None")
+#     type_binder = TypeBinder(real_trait.name, real_target.name)
+
+
+def is_dyn_dispatch(caller: TypeVar|TypeRef, args: Iterable[TypeVar|TypeRef]) -> bool:
+    return any(TypeVar.is_a_var(arg) for arg in args) or TypeVar.is_a_var(caller)
+
+# def create_dyn_object(type_ref: TypeRef|TypeVar, constraints: List['TraitRef']) -> TypeRef:

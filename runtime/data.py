@@ -40,7 +40,7 @@ class DataMeta:
 
 
 class DataObject:
-    def __init__(self, data: Dict[str, Any], meta: DataMeta):
+    def __init__(self, data: Dict[str, Any]|Any, meta: DataMeta):
         self.data = data
         self.meta: DataMeta = meta
 
@@ -56,6 +56,7 @@ class MetaManager:
 
     def __init__(self):
         self.metas: Dict[str, DataMeta] = {}
+        # self.global_vtable: DefaultDict[str, DataMeta] = DataMeta()
         self.globals = {}
 
     def create_object(self, name: str, data: Dict[str, Any]) -> DataObject:

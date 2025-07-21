@@ -1,8 +1,8 @@
+import dataclasses
+from dataclasses import field
 from typing import List, Any, Tuple, Optional, Union
 from abc import ABC, abstractmethod
-# from parser.scope import Scope
-from parser.symbol_type import TraitImpl, TypeRef, FunctionTypeRef
-from parser.symbol_type import TraitRef
+from parser.symbol_type import TraitImpl, TypeRef, FunctionTypeRef, ResolvedFunctionRef, TypeVar
 from parser.visitor.visitor import Visitor
 
 class ASTNode(ABC):
@@ -11,9 +11,10 @@ class ASTNode(ABC):
         self.scope: Optional['Scope'] = None
         self.start_pos = None
         self.end_pos = None
+        self.transformed = None
 
     @abstractmethod
-    def accept(self, visitor: 'Visitor'): pass
+    def accept(self, visitor: 'Visitor', context=None): pass
 
     def walk(self):
         def helper(data, level=0):
@@ -89,8 +90,8 @@ class BinaryOpNode(ASTNode):
     def eval(self) -> Any:
         return eval(f"{self.left.eval()} {self.op} {self.right.eval()}")
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_bin_op(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_bin_op(self, context)
 
     def __str__(self):
         return f"{self.left} {self.op} {self.right}"
@@ -105,8 +106,8 @@ class IdNode(ASTNode):
         self.string: str = name
 
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_identifier(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_identifier(self, context)
 
 
 class VarNode(ASTNode):
@@ -121,8 +122,8 @@ class VarNode(ASTNode):
     def __expr__(self):
         return self.__expr__()
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_var(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_var(self, context)
 
 class AssignNode(ASTNode):
 
@@ -131,8 +132,8 @@ class AssignNode(ASTNode):
         self.var = var
         self.assign_expr = right
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_assign(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_assign(self, context)
 
 class LiteralNode(ASTNode):
 
@@ -142,8 +143,8 @@ class LiteralNode(ASTNode):
         self.literal_type = literal_type
 
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_lit(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_lit(self, context)
 
     def __str__(self):
         return f"{self.val}"
@@ -157,9 +158,10 @@ class TypeVarNode(ASTNode):
         super().__init__()
         self.name: IdNode = identifier
         self.constraints: List['TypeConstraint'] = constraints or []
+        self.type_ref: TypeVar|None = None
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_type_var(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_type_var(self, context)
 
 
 
@@ -171,8 +173,8 @@ class FunctionTypeNode(ASTNode):
         self.args = arg_types
         self.return_type = return_type
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_function_type(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_function_type(self, context)
 
 
 
@@ -182,8 +184,17 @@ class BlockNode(ASTNode):
         super().__init__()
         self.stmts = stmts
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_block(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_block(self, context)
+
+@dataclasses.dataclass
+class CallSourceContext:
+    call_ref: ResolvedFunctionRef
+    define_ast: FunctionTypeRef
+    type_binds: dict['TypeVar', Any] = field(default=dict)
+
+
+
 
 class FunctionCallNode(ASTNode):
 
@@ -193,14 +204,13 @@ class FunctionCallNode(ASTNode):
         self.args: List[ASTNode] = args or []
         self.is_trait_function = False
         self.define_ast: FunctionDefNode = None
-        self.trait_impl: 'TraitImpl' = None
-        self.dyn_trait: 'TraitRef' = None
         self.type_binds: dict['TypeVar', Any] = {}
-        self.call_ref: FunctionTypeRef = None
+        self.call_ref: ResolvedFunctionRef = None
+        self.dyn_dispatch = True
 
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_function_call(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_function_call(self, context)
 
 
 
@@ -244,8 +254,8 @@ class IfStatement(ASTNode):
         self.branches = branches
         self.else_branch = else_branch
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_if(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_if(self, context)
 
 class LoopStatement(ASTNode):
     def __init__(self, condition: ASTNode, body: BlockNode):
@@ -253,8 +263,8 @@ class LoopStatement(ASTNode):
         self.condition = condition
         self.body = body
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_loop(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_loop(self, context)
 
 
 class TypeAnnotation(ASTNode):
@@ -263,8 +273,8 @@ class TypeAnnotation(ASTNode):
         self.name = name
         self.parameters: List['TypeVarNode'] = type_parameters or []
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_type_annotation(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_type_annotation(self, context)
 
 
 class TypeInstance(ASTNode):
@@ -278,8 +288,8 @@ class TypeInstance(ASTNode):
     def unit() -> 'TypeInstance':
         return TypeInstance("Unit")
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_type_instance(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_type_instance(self, context)
 
 
 class StructDefNode(ASTNode):
@@ -289,8 +299,8 @@ class StructDefNode(ASTNode):
         self.fields = fields
 
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_struct_def(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_struct_def(self, context)
 
 
 class VarDefNode(ASTNode):
@@ -304,8 +314,8 @@ class VarDefNode(ASTNode):
     def eval(self) -> Any:
         return None
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_var_def(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_var_def(self, context)
 
 
 
@@ -320,8 +330,8 @@ class FunctionDefNode(ASTNode):
         self.trait_node: TraitImplNode = trait_node
         self.type_parameters: List['TypeVarNode'] = type_parameters or []
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_function_def(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_function_def(self, context)
 
 class ProcNode(ASTNode):
 
@@ -333,8 +343,8 @@ class ProcNode(ASTNode):
         for child in self.children:
             child.eval()
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_proc(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_proc(self, context)
 
 class ReturnNode(ASTNode):
 
@@ -347,8 +357,8 @@ class ReturnNode(ASTNode):
     def eval(self) -> Any:
         pass
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_return(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_return(self, context)
 
 class StructInitNode(ASTNode):
 
@@ -358,8 +368,8 @@ class StructInitNode(ASTNode):
         self.body = body
         self.type_ref: TypeRef = None
 
-    def accept(self, visitor: 'Visitor') -> Any:
-        return visitor.visit_struct_init(self)
+    def accept(self, visitor: 'Visitor', context) -> Any:
+        return visitor.visit_struct_init(self, context)
 
 class TraitFunctionNode(ASTNode):
     def __init__(self, name: IdNode, args: List[VarDefNode], return_type: TypeInstance, trait_node: 'TypeAnnotation'):
@@ -369,8 +379,8 @@ class TraitFunctionNode(ASTNode):
         self.return_type = return_type
         self.trait_node = trait_node
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_trait_function(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_trait_function(self, context)
 
 
 class TraitNode(ASTNode):
@@ -378,8 +388,8 @@ class TraitNode(ASTNode):
         super().__init__()
         self.name = name
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_trait_node(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_trait_node(self, context)
 
 
 
@@ -390,8 +400,8 @@ class TraitDefNode(ASTNode):
         self.name_and_param = name_and_param
         self.functions = trait_functions
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_trait_def(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_trait_def(self, context)
 
 class TraitConstraintNode(ASTNode):
 
@@ -399,8 +409,8 @@ class TraitConstraintNode(ASTNode):
         super().__init__()
         self.traits = traits
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_trait_constraint(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_trait_constraint(self, context)
 
 
 class TraitImplNode(ASTNode):
@@ -418,8 +428,8 @@ class TraitImplNode(ASTNode):
         self.type_parameters = type_parameters or []
         self.impl_detail: TraitImpl = impl
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_trait_impl(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_trait_impl(self, context)
 
     @property
     def trait_name(self):
@@ -432,8 +442,8 @@ class AttributeNode(ASTNode):
         self.data = data
         self.attr = attr
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_attribute(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_attribute(self, context)
 
 class ContinueOrBreak(ASTNode):
 
@@ -441,16 +451,16 @@ class ContinueOrBreak(ASTNode):
         super().__init__()
         self.kind = kind
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_continue_or_break(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_continue_or_break(self, context)
 
 class TypeParameters(ASTNode):
     def __init__(self, type_vars: List[TypeVarNode]):
         super().__init__()
         self.type_var = type_vars
 
-    def accept(self, visitor: 'Visitor'):
-        visitor.visit_generic_type(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        visitor.visit_generic_type(self, context)
 
 
 class TypeConstraint(ASTNode):
@@ -459,15 +469,15 @@ class TypeConstraint(ASTNode):
         self.trait = trait
         self.parameters = parameters or []
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_type_constraint(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_type_constraint(self, context)
 
 class DynTraitNode(ASTNode):
     def __init__(self, trait_name: TraitNode):
         super().__init__()
         self.trait_name = trait_name
 
-    def accept(self, visitor: 'Visitor'):
-        return visitor.visit_dyn_trait(self)
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_dyn_trait(self, context)
 
 TraitInstance = TypeConstraint

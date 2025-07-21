@@ -1,6 +1,10 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union, Any
 from uuid import uuid4
+from enum import Enum
+
+from parser.types import TraitType
+
 
 @dataclass
 class PrimitiveType:
@@ -31,6 +35,20 @@ class TypeVar:
     @staticmethod
     def is_a_var(obj: Any) -> bool:
         return isinstance(obj, TypeVar)
+
+    @staticmethod
+    def is_dynamic_trait(obj: Any) -> bool:
+        return TypeVar.is_a_var(obj) and obj.name == "ANON_TYPE_VAR"
+
+    def __str__(self):
+        if self.constraints:
+            cons = f':({", ".join(map(str, self.constraints))})'
+        else:
+            cons = ''
+        return f"{self.name}{cons}"
+
+    def __repr__(self):
+        return self.__str__()
 
 @dataclass
 class TypeRef:
@@ -115,13 +133,24 @@ class Constraint:
 @dataclass
 class StructTypeRef:
     name: str
-    fields: Dict[str, 'TypeRef']
+    fields: Dict[str, Union['TypeRef', 'TypeVar']]
     parameters: List[Union['TypeRef', 'TypeVar']] = field(default_factory=list)
 
 @dataclass
 class StructType:
     name: str
     fields: Dict[str, Union['StructType', PrimitiveType]]
+
+@dataclass
+class ResolvedFunctionRef:
+    name: Optional[str]
+    args: List[Union['TypeRef', TypeVar]]
+    return_type: 'TypeRef'
+    association_trait: TraitRef = None
+    association_type: TypeRef = None
+    association_ast: Optional['FunctionDefNode'] = None
+    type_parameters: List['TypeRef'] = field(default_factory=list)
+    binds: Dict[TypeVar, TypeRef | TypeVar] = field(default_factory=dict)
 
 @dataclass
 class FunctionTypeRef:
@@ -134,6 +163,20 @@ class FunctionTypeRef:
     association_trait: Optional['TraitRef'] = None
     association_ast: Optional['FunctionDefNode'] = None
     call_source_type: Optional[TypeRef|TypeVar] = None
+
+    def to_resolved(self):
+        return ResolvedFunctionRef(
+            name=self.name,
+            args=self.args,
+            return_type=self.return_type,
+            association_trait=self.association_impl and self.association_impl.trait,
+            association_type=self.association_impl and self.association_impl.target_type,
+            association_ast=self.association_ast,
+            type_parameters=self.type_parameters
+        )
+
+
+
 
 @dataclass
 class FunctionType:
@@ -167,10 +210,22 @@ class TraitImpl:
     target_type: TypeRef
     type_parameters: List[TypeRef|TypeVar] = field(default_factory=list)
     functions: Dict[str, FunctionTypeRef] = field(default_factory=dict)
+    binds: Dict[TypeVar, TypeRef|TypeVar] = field(default_factory=dict)
 
 @dataclass
 class MultiResolvedFunction:
-    functions: List[FunctionTypeRef]
+    functions: List[ResolvedFunctionRef]
+    source_ref: TypeRef|TypeVar
+
+@dataclass
+class ResolvedFunction:
+    function: ResolvedFunctionRef
+    source_ref: TypeRef|TypeVar
+
+
+# class DispatchMode(Enum):
+#     NORMAL
+
 
 type ValueType = PrimitiveType | StructTypeRef | FunctionTypeRef | TraitTypeRef
 type Type = ValueType

@@ -82,6 +82,12 @@ class Scope:
     def __repr__(self):
         return self.__str__()
 
+    def __copy__(self):
+        return Scope(
+            self.parent,
+            self.symbols[:],
+        )
+
 
 class ScopeManager:
 
@@ -152,7 +158,7 @@ class ScopeManager:
     def lookup_traits(self, name) -> Optional[TraitSymbol]:
         return self.current_scope.lookup_traits(name)
 
-    def lookup_type(self, name) -> Optional[TypeSymbol]:
+    def lookup_type(self, name) -> Optional[TypeSymbol|GenericParamSymbol]:
         return self.current_scope.lookup_type(name)
 
     def __enter__(self):
@@ -167,60 +173,105 @@ class TraitImpls:
     def __init__(self):
         self.trait_impls: List[TraitImpl] = []
 
-    def get_impl(self, type_ref: TypeRef, trait_ref: TraitRef) -> Optional[TraitImpl]:
+    def get_impl(self, type_ref: TypeRef, trait_ref: TraitRef) -> List[TraitImpl]:
+        impls = []
         for impl in self.trait_impls:
-            if type_ref == impl.target_type and trait_ref == impl.trait:
-                return impl
-        return None
+            # print(
+            #     trait_ref.name, impl.trait.name
+            # )
+            # print(
+            #     len(trait_ref.parameters), len(impl.trait.parameters)
+            # )
+            # print(
+            #     trait_ref.parameters, impl.trait.parameters , [self.is_type_match(r1, r2) for r1, r2 in zip(trait_ref.parameters, impl.trait.parameters)]
+            # )
+            if (self.is_type_match(type_ref, impl.target_type)
+                        and trait_ref.name == impl.trait.name
+                        and len(trait_ref.parameters) == len(impl.trait.parameters)
+                        and all(self.is_type_match(r1, r2) for r1, r2 in zip(trait_ref.parameters, impl.trait.parameters) )
+            ):
+                impls.append(self.bind_impl(impl, real_target=type_ref, real_trait=trait_ref))
+        return impls
 
-    def _is_type_match(self, r1: TypeRef|TypeVar, r2: TypeRef|TypeVar) -> bool:
+    def is_type_match(self, r1: TypeRef|TypeVar, r2: TypeRef|TypeVar|TraitRef) -> bool:
+        """
+        判断类型 r1 是否满足 r2 的约束，有以下几种情况：
+        1. r1, r2 都为具体类型，则递归比较类型是否完全相同，例如: List<String> == List<String>, List<Int> != List<String>
+        2. r1 为具体类型，r2 为类型变量。那么此时需要先看 r2 是否有约束:
+            2.a 如果没有约束，则 r1 必定符合 r2。
+            2.b 如果有约束，则判断 r1 是否满足约束
+        3. r1, r2 都为类型变量。那么需要保证 r2 的约束在 r1 中都存在
+        4. r1 为类型变量，r2 为具体类型。这种情况应该为固定 false，因为一个类型变量无论约束再多，都无法收束到一个具体类型
+
+        impl <T> Read<T> for Int{
+            def read() -> T{
+
+            }
+        }
+
+        :param r1:
+        :param r2:
+        :return:
+        """
+        # support trait ref
+        if isinstance(r2, TraitRef):
+            # 名字不是必须的，只要有约束即可
+            return self.is_type_match(r1, TypeVar.create("__", [r2]))
+        # case 4
+        if r1.is_var and not r2.is_var:
+            return False
         if r2.is_var:
+            # case 2.a
             if not r2.constraints:
                 return True
             else:
                 for constraint in r2.constraints:
+                    # case 3
                     if r1.is_var:
                         if constraint not in r1.constraints:
                             return False
+                    # case 2.b
                     elif not self.get_impl(r1, constraint):
                         return False
+        # case 1，如果类型名不同，那么肯定不满足约束
         elif r1.name != r2.name:
             return False
+        # 递归比较
         elif r1.parameters:
             if len(r1.parameters) != len(r2.parameters):
                 return False
             for r1, r2 in zip(r1.parameters, r2.parameters):
-                if not self._is_type_match(r1, r2):
+                if not self.is_type_match(r1, r2):
                     return False
         return True
 
-    def get_impl_by_type(self, type_ref: TypeRef) -> List[TraitImpl]:
+    def bind_impl(self, impl: TraitImpl, real_trait: TraitRef|None=None, real_target: TypeRef|None=None):
         from parser.visitor.type_binder import TypeBinder
-        res = []
-        for impl in self.trait_impls:
-            if self._is_type_match(type_ref, impl.target_type):
-                type_binder = TypeBinder(self)
-                type_binder.resolve(impl.target_type,  type_ref)
-                bind_trait = type_binder.bind(impl.trait)
-                res_params = []
-                for p in impl.type_parameters:
-                    if bind_type := type_binder.get_binds().get(p):
-                        if bind_type.is_var:
-                            res_params.append(bind_type)
-                    else:
-                        res_params.append(p)
-                bind_impl = TraitImpl(
-                    bind_trait,
-                    type_ref,
-                    res_params
-                )
-                for func_name, func in impl.functions.items():
-                    f = type_binder.bind(func)
-                    f.association_impl = bind_impl
+        return TypeBinder(self).resolve_impl_and_bind(impl, real_target=real_target, real_trait=real_trait)
 
-                    bind_impl.functions[func_name] = f
-                res.append(bind_impl)
-        return res
+    def get_impl_by_type(self, type_ref: TypeRef) -> List[TraitImpl]:
+        return [self.bind_impl(impl, real_target=type_ref) for impl in self.trait_impls if self.is_type_match(type_ref, impl.target_type)]
+
+    def get_impl_by_trait(self, trait_ref: TraitRef) -> List[TraitImpl]:
+        impls = []
+        for impl in self.trait_impls:
+            if (trait_ref.name == impl.trait.name
+                    and len(trait_ref.parameters) == len(impl.trait.parameters)
+                    and all(self.is_type_match(r1, r2) for r1, r2 in zip(trait_ref.parameters, impl.trait.parameters))
+            ):
+                impls.append(self.bind_impl(impl, real_trait=trait_ref))
+        return impls
+
+    # def get_func_by_name(self, type_ref: TypeRef, func_name: str) -> List[FunctionTypeRef]:
+    #     for impl in self.get_impl_by_type(type_ref):
+    #         for func_name, func in impl.functions.items():
+    #             compile_name = type_utils.get_trait_function_name(trait, expr_type, func_name)
+    #             type_context = TypeContext(trait_impl=impl, function_name=compile_name, type_binds={})
+    #             self.type_contexts.append(type_context)
+    #             self.function_defs.append(self.visit_function_def(func.association_ast))
+    #             self.type_contexts.pop(-1)
+    #             self.meta_manager.get_or_create_meta(type_utils.get_type_id(expr_type)).vtable[func_name][
+    #                 type_utils.get_type_id(trait)] = NameFunctionObject(compile_name, self.meta_manager.globals)
 
     def add_impl(self, impl: TraitImpl):
         self.trait_impls.append(impl)

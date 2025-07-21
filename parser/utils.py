@@ -126,9 +126,38 @@ def init_global_scope(scope_manager: ScopeManager):
 
     for t in PRIMITIVE_TYPE_NAME:
         scope_manager.add_type(TypeSymbol(t, define=PrimitiveType(t), parameters=[]))
-    scope_manager.add_symbol(FunctionSymbol("echo", FunctionTypeRef("echo", [TypeRef("any")], TypeRef("Unit"))))
+    scope_manager.add_symbol(FunctionSymbol("echo", FunctionTypeRef("echo", [TypeRef("String")], TypeRef("Unit"))))
     scope_manager.add_symbol(FunctionSymbol("as_string", FunctionTypeRef("as_string", [TypeRef("any")], TypeRef("String"))))
     scope_manager.add_symbol(FunctionSymbol("as_float", FunctionTypeRef("as_float", [TypeRef("any")], TypeRef("Float"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("add_int", FunctionTypeRef("add_int", [TypeRef("Int"), TypeRef("Int")], TypeRef("Int"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("sub_int", FunctionTypeRef("sub_int", [TypeRef("Int"), TypeRef("Int")], TypeRef("Int"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("div_int", FunctionTypeRef("div_int", [TypeRef("Int"), TypeRef("Int")], TypeRef("Int"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("mul_int", FunctionTypeRef("mul_int", [TypeRef("Int"), TypeRef("Int")], TypeRef("Int"))))
+
+
+    scope_manager.add_symbol(
+        FunctionSymbol("add_float", FunctionTypeRef("add_float", [TypeRef("Float"), TypeRef("Float")], TypeRef("Float"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("sub_float", FunctionTypeRef("sub_float", [TypeRef("Float"), TypeRef("Float")], TypeRef("Float"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("div_float", FunctionTypeRef("div_float", [TypeRef("Float"), TypeRef("Float")], TypeRef("Float"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("mul_float", FunctionTypeRef("mul_float", [TypeRef("Float"), TypeRef("Float")], TypeRef("Float"))))
+
+
+    # scope_manager.add_symbol(
+    #     FunctionSymbol("add_float", FunctionTypeRef("add_float", [TypeRef("Float")], TypeRef("Float"))))
 
     # scope_manager.add_type(TypeSymbol("Int", define=PrimitiveType("Int")))
     # scope_manager.add_struct(TypeSymbol("String"))

@@ -6,13 +6,24 @@ from lexer.lexer import BaseLexer
 from grammer import TOKENS
 from parser.scope import ScopeManager, TraitImpls
 from parser.visitor.script_gen_visitor import EvalVisitor
+from parser.visitor.transfom_visitor import TransformVisitor
 from parser.visitor.type_visitor import TypeDefVisitor, TypeDetailVisitor
 from parser.utils import init_global_scope
 from error.reporter import SourceCodeMaker
 from runtime.data import MetaManager
-
+from runtime.buildin import Converter
+from runtime.buildin import Ops
+from runtime.ops.ops import OPS_CODE
 
 class Test(TestCase):
+
+
+    def parse_buildin(self, scope_manager, trait_impls):
+        lexer = self.get_tokens(OPS_CODE)
+        node = parse_proc(lexer)
+        TypeDefVisitor(scope_manager, trait_impls).visit_proc(node)
+        TypeDetailVisitor(scope_manager, trait_impls).visit_proc(node)
+
 
     def get_tokens(self, code):
         return BaseLexer(TOKENS, SourceCodeMaker(code), code, ignore={"white_space", "comment"})
@@ -28,10 +39,25 @@ class Test(TestCase):
         scope_manager = ScopeManager()
         init_global_scope(scope_manager)
         trait_impls = TraitImpls()
+
+        self.parse_buildin(scope_manager, trait_impls)
+
         TypeDefVisitor(scope_manager, trait_impls).visit_proc(node)
-        TypeDetailVisitor(scope_manager, trait_impls).visit_proc(node)
+        type_visitor = TypeDetailVisitor(scope_manager, trait_impls)
+        type_visitor.visit_proc(node)
+        #TransformVisitor(type_visitor).visit_proc(node)
         meta_manager = MetaManager()
-        symbols = globals() | {'meta_manager': meta_manager}
+        converter = Converter(meta_manager)
+        ops = Ops()
+        symbols = globals() | {'meta_manager': meta_manager,
+                                'as_float': converter.to_float,
+                                'as_string': converter.to_string,
+                                'echo': converter.echo,
+                               'add_int': ops.add,
+                               'sub_int': ops.sub,
+                               'mul_int': ops.mul,
+                                'div_int': ops.div
+                               }
         meta_manager.globals = symbols
         code_visitor = EvalVisitor(meta_manager, PythonCodeGenerator(), trait_impls)
         code_res = code_visitor.visit_proc(node)
@@ -41,6 +67,58 @@ class Test(TestCase):
         print(code_res, flush=True)
         exec(code_res, symbols)
         return node, scope_manager, trait_impls
+
+    def test_struct(self):
+        code = """
+            struct Inner<V>{
+                inner: V
+            }
+            
+            struct Test<T>{
+                item: Inner<T>,
+                item2: T
+            }
+            
+            trait Converter<T>{
+                def into() -> T;
+            }
+
+            impl Converter<String> for Int{
+                def into() -> String{
+                    echo("c to string");
+                    return as_string(self);
+                }
+            }
+
+            impl Converter<Float> for Int{
+                def into() -> Float{
+                    echo("c to int");
+                    return as_float(self);
+                }
+            }
+            
+            impl Converter<String> for Test<String>{
+                def into() -> String{
+                    return self.item2;
+                }
+            }
+            
+            def make_test<K>(t: K) -> Test<K>{
+                return Test{item: Inner{inner: t}, item2: t};
+            }
+            
+            let c = 1;
+            # let b = Test{
+            #     item: Inner{inner: 2.0},
+            #     item2: c.into()
+            # };
+            
+            # #let b = Test{item: c.into()};
+            let test = make_test("1");
+            echo(test.into());
+            # echo(test.item2.into());
+        """
+        _, scope_manager, trait_impls = self.parse(code)
 
     def test(self):
         code = """
@@ -271,6 +349,52 @@ class Test(TestCase):
         #print(scope_manager.lookup_traits('Display'))
         #print(trait_impls.trait_impls)
 
+    def test_multi_resolve(self):
+        code = """
+            # trait Converter<T>{
+            #     def into() -> T;
+            # }
+            # 
+            # impl Converter<String> for Int{
+            #     def into() -> String{
+            #         echo("c to string");
+            #         return as_string(self);
+            #     }
+            # }
+            # 
+            # impl Converter<Float> for Int{
+            #     def into() -> Float{
+            #         echo("c to int");
+            #         return as_float(self);
+            #     }
+            # }
+            # 
+            # def get_dyn() -> impl (Converter<String> + Converter<Float>){
+            #     return 1;
+            # }
+            # let c = get_dyn();
+            # let yyy: Float = c.into();
+            # echo(yyy);
+            
+            def aa<T>(x: T) -> T{
+                return x;
+            }
+
+            def bb<V>(x: V) -> V{
+                return aa(x);
+            }
+
+            def cc<B>(x: B) -> B{
+                return bb(x);
+            }
+
+            let xxxx = cc(1);
+            
+        """
+
+        _, scope_manager, trait_impls = self.parse(code)
+        print(scope_manager.lookup_var("c"))
+
     def test_dyn_trait(self):
         code = """
         trait Converter<T>{
@@ -279,18 +403,160 @@ class Test(TestCase):
         
         impl Converter<String> for Int{
             def into() -> String{
-                echo("c to string");
+                echo("int to string");
                 return as_string(self);
             }
         }
         
-        def get_dyn() -> impl Converter<String>{
+        impl Converter<Float> for Int{
+            def into() -> Float{
+                echo("c to float");
+                return as_float(self);
+            }
+        }
+        # 
+        # 
+         impl Converter<String> for Float{
+            def into() -> String{
+                echo("float to string");
+                return as_string(self);
+            }
+        }
+        # 
+        impl Converter<String> for String{
+            def into() -> String{
+                echo("string to string");
+                return self;
+            }
+        }
+        # 
+        # struct MyConv{item: Int}
+        # trait DConverter<K, V>{
+        #     def convert(k: K) -> V;
+        # }
+        # 
+        # impl<C1> DConverter<C1, String> for MyConv{
+        #     def convert(k: C1) -> String{
+        #         echo("test converter");
+        #         return "1";
+        #     }
+        # }
+        
+        # def convert1<K>(k: K) -> String{
+        #     return MyConv{item: 1}.convert(k);
+        # }
+        # 
+        # let xxxyyxxx = convert1(1);
+        struct Box<T>{
+            item: T
+        }
+        
+        # impl Converter<String> for Box<String>{
+        #     def into() -> String{
+        #         return self.item1;
+        #     }
+        # }
+        
+        impl<T: Converter<String>> Converter<String> for Box<T>{
+            def into() -> String{
+                return self.item.into();
+            }
+        }
+        
+        
+        def get_dyn1() -> impl Converter<String>{
+            return Box{item: "hello world"};
+        }
+        
+        let ppp = get_dyn1().into();
+        
+        echo(ppp);
+        
+ 
+        
+        def get_dyn() -> impl (Converter<String> + Converter<Float>){
             return 1;
         }
         
+        # def get_converter<T: Converter<T>>(x: T) -> T{
+        #     return x;
+        # }
+        # 
+        # let converter = get_converter(1);
+        
+        def write_line<T: Converter<String>>(t: T) -> Unit{
+            let xxx: T = t;
+            let yyyy = xxx;
+            echo(t.into());
+        }
+        
+        write_line(1);
+        write_line(1.2);
+
         let c = get_dyn();
-        let yyy: String = c.into();
-        echo(yyy);
+        write_line(c);
+        # write_line(1);
+        # 
+        # let yyy: Float = c.into();
+        # let zzz: String = yyy.into();
+        # 
+        # write_line(zzz);
+        # 
+        # def foo<T>(t1: T, t2: T) -> Unit{
+        # 
+        # }
+
+        # foo(
+        #     "1", 
+        #     c.into()
+        # );
+        
+
+
+        """
+        _, scope_manager, trait_impls = self.parse(code)
+        print(scope_manager.lookup_var("c"))
+        # print(scope_manager.lookup_var("y1"))
+        # print(scope_manager.lookup_var("b"))
+        # print(scope_manager.lookup_var("e"))
+        # print(scope_manager.lookup_type('List'))
+        # print(scope_manager.lookup_type('Node'))
+        # print(scope_manager.lookup_traits('Convert'))
+        # print(scope_manager.lookup_type('Pair'))
+        # print(scope_manager.lookup_traits('Display'))
+        # print(trait_impls.trait_impls)
+
+
+    def test_dyn_trait(self):
+        code = """
+            struct Box<T>{
+                item: T
+            }
+            
+            impl <T: Ops> Ops for Box<T>{
+                def add(t: Self) -> Self{
+                    return Box{item: self.item + t.item};
+                }
+                
+                def sub(t: Self) -> Self{
+                    return Box{item: self.item - t.item};
+                }
+                
+                def mul(t: Self) -> Self{
+                    return Box{item: self.item * t.item};
+                }
+                
+                def div(t: Self) -> Self{
+                    return Box{item: self.item / t.item};
+                }
+            }
+            
+            let l1 = Box{item: 1};
+            let l2 = Box{item: 2233};
+            
+            let l3 = l1 + l2;
+            echo(as_string(l3.item));
+
 
         """
         _, scope_manager, trait_impls = self.parse(code)
