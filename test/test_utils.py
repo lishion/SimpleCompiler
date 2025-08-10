@@ -1,9 +1,13 @@
 from unittest import TestCase
 from lexer.utils import generate_range, dis_join, split_range_by
 from lexer.state import CharRange
-import dis
+from runtime.data import TypeName
 
 class Test(TestCase):
+
+    def test_type_name(self):
+        x = TypeName("Vector", parameters=(TypeName("Vector", parameters=(TypeName("Int"),TypeName("Int1"))),))
+        print(x)
 
     def test_split(self):
         res = generate_range([1, 2, 5, 10, 25])

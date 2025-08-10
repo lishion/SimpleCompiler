@@ -3,7 +3,8 @@ from parser.node import ASTNode, BinaryOpNode, LiteralNode, BlockNode, FunctionC
     LitArrayNode, LitDictNode, IfStatement, LoopStatement, FunctionDefNode, ProcNode, AssignNode, VarDefNode, \
     StructDefNode, VarNode, Nothing, ReturnNode, StructInitNode, FunctionTypeNode, TraitNode, TraitDefNode, \
     TraitFunctionNode, TraitImplNode, AttributeNode, ContinueOrBreak, TypeVarNode, \
-    TypeAnnotation, TypeInstance, TypeConstraint, TraitInstance, TraitConstraintNode
+    TypeAnnotation, TypeInstance, TypeConstraint, TraitInstance, TraitConstraintNode, ForNode, LogicNotNode, \
+    BitwiseNotNode
 from lexer.lexer import Lexer
 from typing import Optional, List, Type
 from parser.utils import RepeatParser, combiner
@@ -65,11 +66,19 @@ def parse_struct_init(lexer: Lexer):
 
 
 def parse_expr_unit(lexer: Lexer):
+    if lexer.peek().token_type == "not":
+        lexer.pop()
+        node = parse_rel(lexer)
+        return LogicNotNode(node)
+    if lexer.peek().token_type == "!":
+        lexer.pop()
+        node = parse_add(lexer)
+        return BitwiseNotNode(node)
     if lexer.peek() == Lexer.EOF:
         return None
     if lexer.peek().token_type == "(":
         lexer.pop()
-        res = parse_add(lexer)
+        res = parse_rel(lexer)
         lexer.expect(")")
         lexer.pop()
         return res
@@ -131,27 +140,10 @@ def parse_trait_constraint(lexer: Lexer):
     lexer.expect_pop("impl")
     return TraitConstraintNode(parse_constraint_list(lexer))
 
-
-
 def parse_function_arg_type(lexer: Lexer):
     if lexer.try_peek("impl"):
         return parse_trait_constraint(lexer)
     return parse_type_instance(lexer)
-
-
-
-def parse_rel(lexer: Lexer):
-    left = parse_add(lexer)
-    while True:
-        if lexer.peek().token_type not in ('>', '<', '>=', '<='):
-            break
-        node = BinaryOpNode(lexer.peek().token_type)
-        lexer.pop()
-        right = parse_add(lexer)
-        node.left = left
-        node.right = right
-        left = node
-    return left
 
 def parse_eq(lexer: Lexer):
     left = parse_rel(lexer)
@@ -193,19 +185,6 @@ def parse_or(lexer: Lexer) -> ASTNode:
     return left
 
 
-def parse_add(lexer: Lexer) -> Optional[ASTNode]:
-    left = parse_mul(lexer)
-    while True:
-        if lexer.peek().token_type not in ('+', '-'):
-            break
-        node = BinaryOpNode(lexer.peek().text)
-        lexer.pop()
-        right = parse_mul(lexer)
-        node.left = left
-        node.right = right
-        left = node
-    return left
-
 def parse_attr(lexer: Lexer) -> Optional[ASTNode]:
     left = parse_expr_unit(lexer)
     while True:
@@ -221,14 +200,92 @@ def parse_attr(lexer: Lexer) -> Optional[ASTNode]:
             left = node
     return left
 
-def parse_mul(lexer: Lexer) -> Optional[ASTNode]:
+def parse_cal_or(lexer: Lexer) -> Optional[ASTNode]:
     left = parse_attr(lexer)
+    while True:
+        if lexer.peek().token_type != '|':
+            break
+        node = BinaryOpNode(lexer.peek().text)
+        lexer.pop()
+        right = parse_attr(lexer)
+        node.left = left
+        node.right = right
+        left = node
+    return left
+
+def parse_xor(lexer: Lexer) -> Optional[ASTNode]:
+    left = parse_cal_or(lexer)
+    while True:
+        if lexer.peek().token_type != '^':
+            break
+        node = BinaryOpNode(lexer.peek().text)
+        lexer.pop()
+        right = parse_cal_or(lexer)
+        node.left = left
+        node.right = right
+        left = node
+    return left
+
+def parse_cal_and(lexer: Lexer) -> Optional[ASTNode]:
+    left = parse_xor(lexer)
+    while True:
+        if lexer.peek().token_type != '&':
+            break
+        node = BinaryOpNode(lexer.peek().text)
+        lexer.pop()
+        right = parse_xor(lexer)
+        node.left = left
+        node.right = right
+        left = node
+    return left
+
+def parse_mul(lexer: Lexer) -> Optional[ASTNode]:
+    left = parse_cal_and(lexer)
     while True:
         if lexer.peek().token_type not in ('*', '/'):
             break
         node = BinaryOpNode(lexer.peek().token_type)
         lexer.pop()
-        right = parse_attr(lexer)
+        right = parse_cal_and(lexer)
+        node.left = left
+        node.right = right
+        left = node
+    return left
+
+def parse_bitwise_shift(lexer: Lexer) -> Optional[ASTNode]:
+    left = parse_mul(lexer)
+    while True:
+        if lexer.peek().token_type not in ('<<', '>>'):
+            break
+        node = BinaryOpNode(lexer.peek().token_type)
+        lexer.pop()
+        right = parse_mul(lexer)
+        node.left = left
+        node.right = right
+        left = node
+    return left
+
+def parse_add(lexer: Lexer) -> Optional[ASTNode]:
+    left = parse_bitwise_shift(lexer)
+    while True:
+        if lexer.peek().token_type not in ('+', '-'):
+            break
+        node = BinaryOpNode(lexer.peek().text)
+        lexer.pop()
+        right = parse_bitwise_shift(lexer)
+        node.left = left
+        node.right = right
+        left = node
+    return left
+
+def parse_rel(lexer: Lexer):
+    left = parse_add(lexer)
+    while True:
+        if lexer.peek().token_type not in ('>', '<', '>=', '<='):
+            break
+        node = BinaryOpNode(lexer.peek().token_type)
+        lexer.pop()
+        right = parse_add(lexer)
         node.left = left
         node.right = right
         left = node
@@ -298,8 +355,10 @@ def parse_stmt(lexer: Lexer) -> Optional[ASTNode]:
             node.start_pos = t.start_pos
             node.end_pos = t.end_pos
             lexer.expect_pop(";")
+        case "for":
+            node = visit_for_node(lexer)
         case _:
-            raise ValueError(f"Unexpected token {lexer.peek().token_type}")
+            raise ValueError(f"Unexpected token '{lexer.peek().token_type}'")
     return node
 
 
@@ -497,6 +556,13 @@ def parse_proc(lexer: Lexer) -> ProcNode:
         proc_node.children.append(node)
     return proc_node
 
+def visit_for_node(lexer: Lexer) -> ForNode:
+    lexer.expect_pop("for")
+    var_node = parse_var(lexer)
+    lexer.expect_pop("in")
+    iterable = parse_expr(lexer)
+    body = parse_block(lexer)
+    return ForNode(var_node, iterable, body)
 
 # def parse_generic_type(lexer: Lexer) -> GenericTypeNode:
 #     lexer.expect_pop("<")

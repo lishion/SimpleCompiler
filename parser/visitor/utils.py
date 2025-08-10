@@ -20,7 +20,7 @@ def get_type_ref(ast: 'TypeInstance', type_var_names: Dict[str, TypeVar|TypeRef]
     type_var_names = type_var_names or dict()
     def helper(type_instance: TypeInstance) -> TypeRef|TypeVar:
         if isinstance(type_instance, TraitConstraintNode):
-            raise Exception("impl trait can only be used at return type")
+            return TypeVar.create("ANON_TYPE_ARG_VAR", [get_trait_ref(trait, type_var_names) for trait in type_instance.traits])
         if type_var := type_var_names.get(type_instance.name):
             return type_var
         ref = TypeRef(type_instance.name)
@@ -38,11 +38,14 @@ def get_return_type_ref(ast: 'TypeInstance', type_var_names: Dict[str, TypeRef]=
 
 def get_function_ref(trait_function_node: TraitFunctionNode | FunctionDefNode, type_var_names: Dict[str, TypeVar|TypeRef]=None) -> FunctionTypeRef:
     type_var_names = type_var_names or dict()
+
+    arg_types = [get_type_ref(arg.var_type, type_var_names) for arg in trait_function_node.args]
+
     return FunctionTypeRef(
         name=trait_function_node.name.string,
-        args=[get_type_ref(arg.var_type, type_var_names) for arg in trait_function_node.args],
+        args=arg_types,
         return_type=get_return_type_ref(trait_function_node.return_type, type_var_names=type_var_names, function_name=trait_function_node.name.string),
-        type_parameters=[type_var_names.get(arg.var_type.name) for arg in trait_function_node.args if arg.var_type.name in type_var_names]
+        type_parameters=[arg for arg in arg_types if isinstance(arg, TypeVar)],
     )
 
 def get_trait_ref(ast: 'TypeConstraint', type_var_names: Dict[str, TypeRef|TypeVar]=None) -> TraitRef:

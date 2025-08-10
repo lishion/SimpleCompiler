@@ -1,4 +1,5 @@
 from typing import Dict
+from uuid import uuid4
 
 from parser.scope import TraitImpls
 from parser.symbol_type import TraitRef
@@ -39,9 +40,10 @@ class EvalVisitor(Visitor):
 
     def visit_lit(self, node: 'LiteralNode', context=None):
         match node.literal_type.lower():
-            case "float": return float(node.val)
-            case "int": return int(node.val)
-            case "bool": return bool(node.val)
+            case "float": return f"meta_manager.create_object('Float', {float(node.val)})"
+            case "string": return f"meta_manager.create_object('String', '{node.val[1: -1]}')"
+            case "int": return f"meta_manager.create_object('Int', {int(node.val)})"
+            case "bool": return f"meta_manager.create_object('Bool', {node.val == 'true'})"
             case _: return node.val
 
     def visit_var(self, node: 'VarNode', context=None):
@@ -57,10 +59,12 @@ class EvalVisitor(Visitor):
     def visit_function_call(self, node: 'FunctionCallNode', context: TypeContext=None):
         # 如果这个函数是某个 trait 的实现
         trait_name = ""
+        context = context or TypeContext()
         function_call_source = node.call_source.accept(self, context)
         current_context = context
+        LOGGER.info("start to visit function call %s", function_call_source)
+        #LOGGER.info("start to visit function call: %s, %s, %s", node.call_ref.name, node.call_ref.association_trait, node.call_ref.association_type)
         source_function_name = node.call_ref.name
-        LOGGER.info("start to visit function call: %s, %s, %s", node.call_ref.name, node.call_ref.association_trait, node.call_ref.association_type)
         """
             传递 type resolve, 例如:
             def a<T>(x: T) -> T{
@@ -78,6 +82,12 @@ class EvalVisitor(Visitor):
             调用 b 时，由于 b 本身也有泛型，因此会得到映射 Tb=Tc，但是在 c 已经求解了 Tc = Int，因此需要将 Tc 替换为 Int，最终将 Tb 也替换为 Int
         """
         bind_binds = type_utils.resolve_type_binds(node.type_binds, current_context.type_binds)
+
+        if node.origin_call_ref:
+            for arg_define_type, arg in zip(node.origin_call_ref.args, node.args):
+                if TypeVar.is_a_var(arg_define_type) and arg.expr_type.is_primitive_type:
+                    self.create_dyn_object(arg.expr_type, arg_define_type.constraints, bind_binds)
+
         if node.call_ref.association_trait:
             # 绑定 type params 到 trait
             """
@@ -128,15 +138,34 @@ class EvalVisitor(Visitor):
             function_call_source = compile_name
 
         arg_str = "(" + ",".join([str(arg.accept(self, TypeContext(type_binds=bind_binds))) for arg in node.args]) + ")"
+        #tmp_var = f"tmp_var_{str(uuid4()).replace('-', '_')}"
         if isinstance(node.call_source, AttributeNode) and node.call_ref.association_trait:
             data = node.call_source.data.accept(self, TypeContext(type_binds=bind_binds))
+            #data = f"{tmp_var} = {node.call_source.data.accept(self, TypeContext(type_binds=bind_binds))}"
             # 零开销抽象，如果是 primitive type 调用方法且不是动态分派，则会进行转换，这里不用对 primitive 进行包装
             # 例如 1.into，实际上是 into(1)，可以省去装箱开箱的成本
+            # if node.call_ref.association_type.is_primitive_type and not node.dyn_dispatch:
+            #     function_call_source = f"meta_manager.get_or_create_meta('{node.call_ref.association_type.name}').vtable['{source_function_name}']['{trait_name}']"
+            #     arg_str = f"({data},{arg_str[1: -1]})"
+            # else:
+            #     arg_str = f".get('{trait_name}')({data},{arg_str[1: -1]})"
+
+            if "." in function_call_source:
+                parts = function_call_source.split(".")
+                call_data = ".".join(parts[0:-1])
+                attr = parts[-1]
+                tmp_var = f"tmp_var_{str(uuid4()).replace('-', '_')}"
+            else:
+                tmp_var = f"tmp_var_{str(uuid4()).replace('-', '_')}"
+                attr = ""
+                call_data = function_call_source
             if node.call_ref.association_type.is_primitive_type and not node.dyn_dispatch:
                 function_call_source = f"meta_manager.get_or_create_meta('{node.call_ref.association_type.name}').vtable['{source_function_name}']['{trait_name}']"
                 arg_str = f"({data},{arg_str[1: -1]})"
+            elif attr:
+                return f"({tmp_var}:={call_data}, {tmp_var}.{attr}.get('{trait_name}')({call_data},{arg_str[1: -1]}))[-1]"
             else:
-                arg_str = f".get('{trait_name}')({data},{arg_str[1: -1]})"
+                return f"({tmp_var}:={call_data}, {tmp_var}.get('{trait_name}')({tmp_var},{arg_str[1: -1]}))[-1]"
         return f"{function_call_source}{arg_str}"
 
 
@@ -146,8 +175,8 @@ class EvalVisitor(Visitor):
         elif_branch = node.branches[1:]
         else_branch = node.else_branch
         res = [
-            f"if {if_branch[0].accept(self)}:",
-            if_branch[1].accept(self)
+            f"if is_true({if_branch[0].accept(self, context)}):",
+            if_branch[1].accept(self, context)
        ]
 
         for condition, branch in elif_branch:
@@ -209,10 +238,13 @@ class EvalVisitor(Visitor):
             target_trait = type_utils.bind_type(trait, binds)
             # 获取所有 impl，编译对应的函数
             for impl in self.trait_impls.get_impl(target_type, target_trait):
+                # 如果类型绑定不为空，且有其他类型绑定为目标约束，那同样需要进行编译
+                for define_type, bind_type in impl.binds.items():
+                    self.create_dyn_object(bind_type, define_type.constraints, binds)
                 for func_name, func in impl.functions.items():
                     compile_name = type_utils.get_trait_function_name(trait, target_type, func_name)
                     if compile_name not in self.defined_functions:
-                        type_context = TypeContext(trait=target_trait, function_name=compile_name, type_binds={},
+                        type_context = TypeContext(trait=target_trait, function_name=compile_name, type_binds=binds,
                                                    return_type=func.return_type)
                         self.function_defs.append(func.association_ast.accept(self, type_context))
                     self.meta_manager.get_or_create_meta(type_utils.get_type_id(target_type)).vtable[func_name][
@@ -235,9 +267,9 @@ class EvalVisitor(Visitor):
             # 传递类型绑定，获取 return 真实的类型
             target_type = type_utils.bind_type(expr_type, context.type_binds)
             self.create_dyn_object(target_type, context.return_type.constraints, context.type_binds)
-            if target_type.is_primitive_type:
-                vtable_key = type_utils.get_type_id(expr_type)
-                return f"""return meta_manager.create_object('{vtable_key}', {node.expr.accept(self, context)})"""
+            # if target_type.is_primitive_type:
+            #     vtable_key = type_utils.get_type_id(expr_type)
+            #     return f"""return meta_manager.create_object('{vtable_key}', {node.expr.accept(self, context)})"""
         return f"return {node.expr.accept(self, context)}"
 
     def visit_identifier(self, node: 'IdNode', context=None):
@@ -247,6 +279,8 @@ class EvalVisitor(Visitor):
         pass
 
     def visit_attribute(self, node: 'AttributeNode', context=None):
+        # tmp_var = f"tmp_var_{str(uuid4())}"
+        # data = f"{tmp_var} {node.data.accept(self, context)}"
         return f"{node.data.accept(self, context)}.attr('{node.attr.string}')"
 
     def visit_trait_function(self, node: 'TraitFunctionNode', context=None):
@@ -274,14 +308,13 @@ class EvalVisitor(Visitor):
         super().visit_type_constraint(node)
 
     def visit_struct_init(self, node: 'StructInitNode', context=None):
-        LOGGER.info("visit struct init: %s", context.type_binds)
+        LOGGER.info("visit struct init: %s, %s", context.type_binds, node.type_name.name)
         if node.type_ref.parameters:
             type_ref = type_utils.bind_type(node.type_ref, context.type_binds)
             vtable_key = type_utils.get_type_id(type_ref)
             LOGGER.info("vtable key: %s", vtable_key)
             self.meta_manager.get_or_create_meta(vtable_key)
         else:
-
             vtable_key = node.type_name.name
             LOGGER.info("vtable key: %s", vtable_key)
             self.meta_manager.get_or_create_meta(vtable_key)

@@ -108,3 +108,12 @@ class Visitor[T]:
 
     def visit_trait_constraint(self, node: 'TraitConstraintNode', parse_context: T|None=None):
         pass
+
+    def visit_for(self, node: 'ForNode', parse_context: T|None=None):
+        pass
+
+    def visit_logic_not(self, node: 'LogicNotNode', parse_context: T|None=None):
+        return None
+
+    def visit_bitwise_not(self, node: 'BitwiseNotNode', parse_context: T|None=None):
+        return None

@@ -8,7 +8,7 @@ from lexer.lexer import BaseLexer
 from grammer import TOKENS
 from parser.scope import ScopeManager
 from parser.types import FunctionSignature
-from parser.visitor1 import SymbolVisitor, ReferenceResolveVisitor, EvalVisitor, PositionVisitor, SymbolDefinitionVisitor
+# from parser.visitor1 import SymbolVisitor, ReferenceResolveVisitor, EvalVisitor, PositionVisitor, SymbolDefinitionVisitor
 from parser.utils import init_global_scope
 from error.reporter import SourceCodeMaker, ErrorReporter
 from runtime.data import MetaManager
@@ -64,10 +64,10 @@ class Test(TestCase):
             }
             let b = 1;
             let c = Student{a: 1} + 1 + Student{b: 1};
-            type Student = {
+            struct Student {
                 name: string
             }
-            type Student<T> = {
+            struct Student<T> {
                 name: string,
                 id: T
             }
@@ -115,6 +115,8 @@ class Test(TestCase):
             #      c: 1
             #   },
             # };
+            let a = !1+3;
+            let a = !a << 1 + b >> 2;
             """
         ).walk()
 

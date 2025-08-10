@@ -1,29 +1,21 @@
 from unittest import TestCase
 
-from code_gen.script import PythonCodeGenerator
 from parser.expr import parse_proc
 from lexer.lexer import BaseLexer
 from grammer import TOKENS
-from parser.scope import ScopeManager, TraitImpls
-from parser.visitor.script_gen_visitor import EvalVisitor
-from parser.visitor.transfom_visitor import TransformVisitor
 from parser.visitor.type_visitor import TypeDefVisitor, TypeDetailVisitor
-from parser.utils import init_global_scope
 from error.reporter import SourceCodeMaker
-from runtime.data import MetaManager
-from runtime.buildin import Converter
-from runtime.buildin import Ops
-from runtime.ops.ops import OPS_CODE
+from runtime.bridge.__init__ import BRIDGE_CODE
+from runtime.interpreter import INTERPRETER
 
 class Test(TestCase):
 
 
     def parse_buildin(self, scope_manager, trait_impls):
-        lexer = self.get_tokens(OPS_CODE)
+        lexer = self.get_tokens(BRIDGE_CODE)
         node = parse_proc(lexer)
         TypeDefVisitor(scope_manager, trait_impls).visit_proc(node)
         TypeDetailVisitor(scope_manager, trait_impls).visit_proc(node)
-
 
     def get_tokens(self, code):
         return BaseLexer(TOKENS, SourceCodeMaker(code), code, ignore={"white_space", "comment"})
@@ -34,39 +26,44 @@ class Test(TestCase):
         return node
 
     def parse(self, code):
-        lexer = self.get_tokens(code)
-        node = parse_proc(lexer)
-        scope_manager = ScopeManager()
-        init_global_scope(scope_manager)
-        trait_impls = TraitImpls()
-
-        self.parse_buildin(scope_manager, trait_impls)
-
-        TypeDefVisitor(scope_manager, trait_impls).visit_proc(node)
-        type_visitor = TypeDetailVisitor(scope_manager, trait_impls)
-        type_visitor.visit_proc(node)
-        #TransformVisitor(type_visitor).visit_proc(node)
-        meta_manager = MetaManager()
-        converter = Converter(meta_manager)
-        ops = Ops()
-        symbols = globals() | {'meta_manager': meta_manager,
-                                'as_float': converter.to_float,
-                                'as_string': converter.to_string,
-                                'echo': converter.echo,
-                               'add_int': ops.add,
-                               'sub_int': ops.sub,
-                               'mul_int': ops.mul,
-                                'div_int': ops.div
-                               }
-        meta_manager.globals = symbols
-        code_visitor = EvalVisitor(meta_manager, PythonCodeGenerator(), trait_impls)
-        code_res = code_visitor.visit_proc(node)
-        for func in code_visitor.function_defs:
-            print(func)
-            exec(func, symbols)
-        print(code_res, flush=True)
-        exec(code_res, symbols)
-        return node, scope_manager, trait_impls
+        # lexer = self.get_tokens(code)
+        # node = parse_proc(lexer)
+        # scope_manager = ScopeManager()
+        # init_global_scope(scope_manager)
+        # trait_impls = TraitImpls()
+        #
+        # self.parse_buildin(scope_manager, trait_impls)
+        #
+        # TypeDefVisitor(scope_manager, trait_impls).visit_proc(node)
+        # type_visitor = TypeDetailVisitor(scope_manager, trait_impls)
+        # type_visitor.visit_proc(node)
+        # #TransformVisitor(type_visitor).visit_proc(node)
+        # meta_manager = MetaManager()
+        # converter = Converter(meta_manager)
+        # ops = Ops()
+        # symbols = globals() | {'meta_manager': meta_manager,
+        #                         'as_float': converter.to_float,
+        #                         'as_string': converter.to_string,
+        #                         'echo': converter.echo,
+        #                        'add_int': ops.add,
+        #                        'sub_int': ops.sub,
+        #                        'mul_int': ops.mul,
+        #                         'div_int': ops.div,
+        #                        'gt_int': ops.gt,
+        #                        'eq_int': ops.eq,
+        #                        'le_int': ops.le,
+        #                        }
+        # meta_manager.globals = symbols
+        # code_visitor = EvalVisitor(meta_manager, PythonCodeGenerator(), trait_impls)
+        # code_res = code_visitor.visit_proc(node)
+        # for func in code_visitor.function_defs:
+        #     print(func)
+        #     exec(func, symbols)
+        # print(code_res, flush=True)
+        # exec(code_res, symbols)
+        INTERPRETER.init()
+        INTERPRETER.run(code)
+        #return node, scope_manager, trait_impls
 
     def test_struct(self):
         code = """
@@ -108,17 +105,10 @@ class Test(TestCase):
             }
             
             let c = 1;
-            # let b = Test{
-            #     item: Inner{inner: 2.0},
-            #     item2: c.into()
-            # };
-            
-            # #let b = Test{item: c.into()};
             let test = make_test("1");
             echo(test.into());
-            # echo(test.item2.into());
         """
-        _, scope_manager, trait_impls = self.parse(code)
+        self.parse(code)
 
     def test(self):
         code = """
@@ -400,35 +390,30 @@ class Test(TestCase):
         trait Converter<T>{
             def into() -> T;
         }
-        
+        # 
         impl Converter<String> for Int{
             def into() -> String{
                 echo("int to string");
                 return as_string(self);
             }
         }
-        
+
         impl Converter<Float> for Int{
             def into() -> Float{
                 echo("c to float");
                 return as_float(self);
             }
         }
-        # 
-        # 
+
+
          impl Converter<String> for Float{
             def into() -> String{
                 echo("float to string");
                 return as_string(self);
             }
         }
-        # 
-        impl Converter<String> for String{
-            def into() -> String{
-                echo("string to string");
-                return self;
-            }
-        }
+
+        
         # 
         # struct MyConv{item: Int}
         # trait DConverter<K, V>{
@@ -447,9 +432,7 @@ class Test(TestCase):
         # }
         # 
         # let xxxyyxxx = convert1(1);
-        struct Box<T>{
-            item: T
-        }
+        
         
         # impl Converter<String> for Box<String>{
         #     def into() -> String{
@@ -457,8 +440,21 @@ class Test(TestCase):
         #     }
         # }
         
-        impl<T: Converter<String>> Converter<String> for Box<T>{
+        impl Converter<String> for String{
             def into() -> String{
+                echo("string to string");
+                return self;
+            }
+        }
+        
+        struct Box<T>{
+            item: T
+        }
+        
+        impl<T: Converter<String>> Converter<String> for Box<T>{
+            def into() -> String{   
+                # self -> Box<T>
+                # self.item -> T: Converter<String>
                 return self.item.into();
             }
         }
@@ -470,10 +466,10 @@ class Test(TestCase):
         
         let ppp = get_dyn1().into();
         
-        echo(ppp);
-        
- 
-        
+        # print(ppp);
+        # 
+        # 
+        # 
         def get_dyn() -> impl (Converter<String> + Converter<Float>){
             return 1;
         }
@@ -489,18 +485,18 @@ class Test(TestCase):
             let yyyy = xxx;
             echo(t.into());
         }
-        
+
         write_line(1);
         write_line(1.2);
 
         let c = get_dyn();
         write_line(c);
-        # write_line(1);
-        # 
-        # let yyy: Float = c.into();
-        # let zzz: String = yyy.into();
-        # 
-        # write_line(zzz);
+        write_line(1);
+
+        let yyy: Float = c.into();
+        let zzz: String = yyy.into();
+
+        write_line(zzz);
         # 
         # def foo<T>(t1: T, t2: T) -> Unit{
         # 
@@ -510,6 +506,10 @@ class Test(TestCase):
         #     "1", 
         #     c.into()
         # );
+        
+        if 2 < 1{
+            write_line("123123");
+        }
         
 
 
@@ -526,11 +526,73 @@ class Test(TestCase):
         # print(scope_manager.lookup_traits('Display'))
         # print(trait_impls.trait_impls)
 
+    def test_operator(self):
+        code = """
+            # struct Box<T>{
+            #     item: T
+            # }
+            # 
+            # let a = Box{item: 1};
+            # let b = Box{item: 2};
+            # 
+            # 
+            # impl ToString for Box<Int>{
+            #     def to_string() -> String{
+            #         return "Box{item: " + self.item.to_string() + "}";
+            #     }
+            # }
+            # impl Add for Box<Int>{
+            #     def add(rhs: Self) -> Self{
+            #         return Box{item: self.item + rhs.item};
+            #     }
+            # }
+            # let c = a + b;
+            # print(c.to_string());
+            
+            def add<T: Add>(x: T, y: T) -> T{
+                return x + y;
+            }
+            
+            let xxx = add(1, 2);
+            
+            
+            # let a = 1;
+            # let b = 1;
+            # let c = 3 > 2 and 2 > 3;
+            # if 2 > 3{
+            #     print("false");
+            # }    
+            # else{
+            #      echo("true");
+            # }
+            # def add() -> Int{
+            #     return 1;
+            # }
+            # 
+            # let xxx = add() + 3;
+            # print(xxx);
+            # print("111" + "222");
+               
+        """
+        self.parse(code)
 
-    def test_dyn_trait(self):
+
+
+
+    def test_dyn_trait1(self):
         code = """
             struct Box<T>{
                 item: T
+            }
+            
+            trait Trait1<T>{
+                def test() -> Unit;
+            }
+            
+            impl Trait1<String> for Box<String>{
+                def test() -> Unit{
+                    print("test string");
+                }
             }
             
             impl <T: Ops> Ops for Box<T>{
@@ -551,16 +613,27 @@ class Test(TestCase):
                 }
             }
             
-            let l1 = Box{item: 1};
-            let l2 = Box{item: 2233};
+            # let l1 = Box{item: 1};
+            # let l2 = Box{item: 2233};
+            # let l3 = Box{item: 2233};
             
-            let l3 = l1 + l2;
-            echo(as_string(l3.item));
+            #let l4 = l1 + l2 + l3;
+            # for x in y {
+            # 
+            # }
+            
+            def ttt(x: impl Trait1<String>) -> Unit{
+                x.test();
+            }
+            
+            let x = Box{item: "hello"};
+            ttt(x);
+        
 
 
         """
-        _, scope_manager, trait_impls = self.parse(code)
-        print(scope_manager.lookup_var("c"))
+        self.parse(code)
+
         # print(scope_manager.lookup_var("y1"))
         # print(scope_manager.lookup_var("b"))
         # print(scope_manager.lookup_var("e"))

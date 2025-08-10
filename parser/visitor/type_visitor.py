@@ -1,5 +1,4 @@
-from _ast import FunctionDef
-from array import ArrayType
+
 from typing import Dict
 from parser.symbol_type import StructTypeRef, TraitTypeRef, FunctionTypeRef, TypeRef, TraitImpl, TraitRef, \
     PrimitiveType, \
@@ -14,6 +13,8 @@ from copy import copy, deepcopy
 from itertools import chain
 from dataclasses import dataclass, field
 from utils.logger import LOGGER
+from parser.visitor.operators import OPERATOR_NAMES, OPERATOR_TRAIT_NAMES
+
 
 class TypeDefVisitor(Visitor):
 
@@ -146,6 +147,7 @@ class TypeDefVisitor(Visitor):
             self.scope_manager.add_symbol(VarSymbol("self", target_type))
             self.scope_manager.add_symbol(GenericParamSymbol("Self", TypeVar.create("Self")))
             utils.visit_all(node.functions, self)
+            #for func in node.functions:
 
             # add type param T to scope to let function can refer
 
@@ -232,6 +234,17 @@ class TypeDefVisitor(Visitor):
         self.bind_scope(node)
         node.left.accept(self, parse_context)
         node.right.accept(self, parse_context)
+
+    def visit_if(self, node: 'IfStatement', context=None):
+        self.bind_scope(node)
+        for branch, body in node.branches:
+            branch.accept(self, context)
+            body.accept(self, context)
+        node.else_branch and node.else_branch.accept(self, context)
+
+    def visit_block(self, node: 'BlockNode', parse_context=None):
+        self.bind_scope(node)
+        utils.visit_all(node.stmts, self)
 
 @dataclass
 class TypeContext:
@@ -417,9 +430,10 @@ class TypeDetailVisitor(Visitor):
         source_ref = getattr(function_define_source, 'source_ref', None)
         source_ref = source_ref and utils.bind_type(source_ref, type_context.type_binds)
 
+
+
         node.dyn_dispatch = TypeVar.is_a_var(source_ref)
 
-        #node.scope.lookup_type("Self")
 
 
 
@@ -428,8 +442,17 @@ class TypeDetailVisitor(Visitor):
         elif isinstance(function_define, ResolvedFunction):
             function_define = function_define.function
 
+
+
+        LOGGER.info("function '%s' use dyn dispatch: %s", function_define, node.dyn_dispatch)
         if isinstance(function_define, ResolvedFunctionRef):
-            LOGGER.info("function '%s' use dyn dispatch: %s", function_define.name, node.dyn_dispatch)
+            #if function_define.association_type:
+                #self_var: VarSymbol = node.scope.lookup_var('self')
+                #LOGGER.info(f"self var {self_var.name} is defined as type {self_var.type_ref}")
+            node.origin_call_ref = function_define
+            if function_define.name == "add1":
+                pass
+
             if len(function_define.args) != len(node.args):
                 raise TypeError(f"function {function_define.name} expect {len(function_define.args)} args but got {len(node.args)}")
             type_binder = TypeBinder(self.trait_impls)
@@ -440,6 +463,7 @@ class TypeDetailVisitor(Visitor):
                 all_binds = type_context.type_binds | type_binder.get_binds()
                 bind_type = utils.bind_type(defined_type, all_binds)
                 expr_type = arg.accept(self, TypeContext(func_expect_return_type=bind_type, type_binds=all_binds))
+                arg.expr_type = expr_type
                 type_binder.resolve(defined_type, expr_type)
             bind_function = type_binder.bind(function_define)
 
@@ -474,6 +498,8 @@ class TypeDetailVisitor(Visitor):
             """
             filter_by_args: List[(FunctionTypeRef, TypeBinder)] = []
             for func in function_define.functions:
+                if func.name == "add1":
+                    pass
                 type_binder = TypeBinder(self.trait_impls)
                 if len(func.args) != len(node.args):
                     raise TypeError(f"function expect {len(func.args)} args but got {len(node.args)}")
@@ -602,8 +628,6 @@ class TypeDetailVisitor(Visitor):
         symbol = self.scope_manager.lookup_type(node.type_name.name)
         fields = symbol.define.fields
         type_binder = TypeBinder(self.trait_impls, context.type_binds)
-        if context.type_binds:
-            pass
         for var, expr in node.body:
             field_name = var.string
             if field_name not in fields:
@@ -627,9 +651,9 @@ class TypeDetailVisitor(Visitor):
     def visit_attribute(self, node: 'AttributeNode', context=None):
         context = context or TypeContext()
         type_ref: TypeRef|TypeVar = node.data.accept(self, context)
+        type_ref = utils.bind_type(type_ref, context.type_binds)
         if not TypeVar.is_a_var(type_ref):
             symbol = self.scope_manager.lookup_type(type_ref.name)
-            type_ref = utils.bind_type(type_ref, context.type_binds)
             if isinstance(symbol.define, StructTypeRef):
                 type_ref = utils.de_ref(type_ref, node.scope)
                 LOGGER.info("deref struct type '%s' to %s", type_ref.name, type_ref.struct_ref.fields)
@@ -673,26 +697,80 @@ class TypeDetailVisitor(Visitor):
 
         raise TypeError(f"Attribute {node.attr.string} is not defined in type {type_ref}")
 
+    def add_transformed_node(self, node: 'ASTNode', transformed: 'ASTNode', context):
+        node.transformed = transformed
+        transformed.scope = node.scope
+        node.transformed.accept(self, context)
+
+
     def visit_bin_op(self, node: 'BinaryOpNode', parse_context: None=None):
-        LOGGER.info('context is %s', parse_context)
         left = node.left.accept(self, parse_context)
         right = node.right.accept(self, parse_context)
-        if left != right:
-            raise TypeError(f"Binary operation {node.op} expect same type for left and right, but got {left} and {right}")
-        if TypeVar.is_a_var(left):
-            for x in left.constraints:
-                if x.name == "Ops":
-                    return left
-            raise TypeError(f"Type {left} is a type variable without Ops trait constraint")
-        elif not self.trait_impls.get_impl(left, TraitRef('Ops')):
-            raise TypeError(f"Type '{left}' is not impl trait Ops")
-        call_source = AttributeNode(node.left, IdNode("add"))
-        call_source.scope = node.scope
-        new_node = FunctionCallNode(
-            call_source=call_source,
-            args=[node.right]
-        )
-        new_node.scope = node.scope
-        node.transformed = new_node
-        node.transformed.accept(self, parse_context)
-        return left
+        expr_type = None
+        new_node = None
+        if node.op in ['and', 'or']:
+            if left.name != 'Bool' or right.name != 'Bool':
+                raise TypeError(f"Binary operation {node.op} expect Bool type for both sides, but got {left} and {right}")
+            call_source = VarNode(IdNode(OPERATOR_NAMES[node.op]))
+            call_source.scope = node.scope
+            new_node = FunctionCallNode(
+                call_source=call_source,
+                args=[node.left, node.right]
+            )
+            expr_type = TypeRef("Bool")
+        if node.op in ['==', '!=', '<', '>', '<=', '>=']:
+            if left != right:
+                raise TypeError(
+                    f"Binary operation {node.op} expect same type for left and right, but got {left} and {right}")
+            if TypeVar.is_a_var(left):
+                for x in left.constraints:
+                    if x.name == "Compare":
+                        return TypeRef("Bool")
+                raise TypeError(f"Type {left} is a type variable without Ops trait constraint")
+            elif not self.trait_impls.get_impl(left, TraitRef('Compare')):
+                raise TypeError(f"Type '{left}' is not impl trait Ops")
+            call_source = AttributeNode(node.left, IdNode(OPERATOR_NAMES[node.op]))
+            call_source.scope = node.scope
+            new_node = FunctionCallNode(
+                call_source=call_source,
+                args=[node.right]
+            )
+            expr_type = TypeRef("Bool")
+        elif node.op in ['+', '-', '*', '/', '%']:
+            if left != right:
+                raise TypeError(f"Binary operation {node.op} expect same type for left and right, but got {left} and {right}")
+            if TypeVar.is_a_var(left):
+                for x in left.constraints:
+                    if x.name == OPERATOR_TRAIT_NAMES[node.op]:
+                        return left
+                if not expr_type:
+                    raise TypeError(f"Type {left} is a type variable without Ops trait constraint")
+            elif not self.trait_impls.get_impl(left, TraitRef(OPERATOR_TRAIT_NAMES[node.op])):
+                raise TypeError(f"Type '{left}' is not impl trait Ops")
+            call_source = AttributeNode(node.left, IdNode(OPERATOR_NAMES[node.op]))
+            call_source.scope = node.scope
+            new_node = FunctionCallNode(
+                call_source=call_source,
+                args=[node.right]
+            )
+            expr_type = left
+        new_node and self.add_transformed_node(node, new_node, parse_context)
+        return expr_type
+
+    def visit_if(self, node: 'IfStatement', parse_context: None):
+        for condition, body in node.branches:
+            condition_type = condition.accept(self, parse_context)
+            if condition_type.name != 'Bool':
+                raise TypeError(f"if condition expect Bool type, but got {condition_type}")
+            body.accept(self, parse_context)
+        if node.else_branch:
+            node.else_branch.accept(self, parse_context)
+
+    def visit_block(self, node: 'BlockNode', parse_context=None):
+        for stmt in node.stmts:
+            if isinstance(stmt, ReturnNode):
+                return_type = stmt.accept(self, parse_context)
+                if parse_context and parse_context.func_expect_return_type:
+                    utils.validate_return_type(return_type, parse_context.func_expect_return_type, self.trait_impls)
+            else:
+                stmt.accept(self, parse_context)

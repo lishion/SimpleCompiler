@@ -5,8 +5,10 @@ from parser.node import  Nothing, FunctionTypeNode, TraitFunctionNode, VarDefNod
     FunctionDefNode, StructDefNode, TraitConstraintNode, TypeAnnotation, TypeVarNode
 from parser.scope import Scope, ScopeManager
 from parser.symbol import Symbol, TypeSymbol, FunctionSymbol, TraitSymbol, VarSymbol
-from parser.symbol_type import PrimitiveType, TypeRef, FunctionTypeRef
-from parser.types import Type, FunctionSignature, StructureType, TraitConstraintsType, TypeVar
+from parser.symbol_type import PrimitiveType, TypeRef, FunctionTypeRef, TypeVar, TraitTypeRef
+
+
+# from parser.types import Type, FunctionSignature, StructureType, TraitConstraintsType
 
 
 class RepeatParser:
@@ -155,6 +157,31 @@ def init_global_scope(scope_manager: ScopeManager):
     scope_manager.add_symbol(
         FunctionSymbol("mul_float", FunctionTypeRef("mul_float", [TypeRef("Float"), TypeRef("Float")], TypeRef("Float"))))
 
+    scope_manager.add_symbol(
+        FunctionSymbol("panic",
+                       FunctionTypeRef("panic", [TypeRef("String")], TypeRef("Unit"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("le_int", FunctionTypeRef("le_int", [TypeRef("Int"), TypeRef("Int")], TypeRef("Bool"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("gt_int", FunctionTypeRef("le_int", [TypeRef("Int"), TypeRef("Int")], TypeRef("Bool"))))
+
+    scope_manager.add_symbol(
+        FunctionSymbol("eq_int", FunctionTypeRef("le_int", [TypeRef("Int"), TypeRef("Int")], TypeRef("Bool"))))
+
+    scope_manager.add_type(TypeSymbol("List", define=TypeRef("List"), parameters=[TypeVar.create("T")]))
+
+    # var1 = TypeVar.create("T", constraints=[TraitTypeRef("Write")])
+    #
+    # scope_manager.add_symbol(FunctionSymbol("next_item",
+    #                    FunctionTypeRef(
+    #                        "next_item",
+    #                        args =[var1],
+    #                        return_type=var1
+    #                    ))
+    #                        )
+
 
     # scope_manager.add_symbol(
     #     FunctionSymbol("add_float", FunctionTypeRef("add_float", [TypeRef("Float")], TypeRef("Float"))))
@@ -185,16 +212,16 @@ def init_global_scope(scope_manager: ScopeManager):
     # )
 
 
-def type_check(expect_type: Type|TraitConstraintsType, actual_type: Type, scope: Scope) -> bool|Set[str]:
-    if isinstance(expect_type, TraitConstraintsType):
-        impled_traits = scope.get_impl_by_target(actual_type.name) or {}
-        impled_trait_names = set(impled_traits.keys())
-        constraints = set(expect_type.constraints)
-        return constraints - impled_trait_names
-    if expect_type.name == "Any" or actual_type.name == "Any":
-        return False
-    # 否则直接比较类型是否相等
-    return expect_type != actual_type
+# def type_check(expect_type: Type|TraitConstraintsType, actual_type: Type, scope: Scope) -> bool|Set[str]:
+#     if isinstance(expect_type, TraitConstraintsType):
+#         impled_traits = scope.get_impl_by_target(actual_type.name) or {}
+#         impled_trait_names = set(impled_traits.keys())
+#         constraints = set(expect_type.constraints)
+#         return constraints - impled_trait_names
+#     if expect_type.name == "Any" or actual_type.name == "Any":
+#         return False
+#     # 否则直接比较类型是否相等
+#     return expect_type != actual_type
 
 
 def died_branch():

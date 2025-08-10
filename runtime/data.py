@@ -3,6 +3,7 @@ from abc import abstractmethod
 from collections import defaultdict
 from typing import Dict, Any, Callable, DefaultDict
 from dataclasses import field
+from parser.symbol_type import TypeRef
 
 
 @abstractmethod
@@ -33,6 +34,28 @@ class NameFunctionObject(FunctionObject):
         self.function_name = function_name
         self.globals = globals
 
+@dataclasses.dataclass(frozen=True)
+class TypeName:
+    name: str
+    parameters: tuple['TypeName', ...] = field(default_factory=tuple)
+
+    def __str__(self):
+        if self.parameters:
+            return f"{self.name}_p_{'_'.join(map(str, self.parameters))}_q"
+        return self.name
+
+    def __repr__(self):
+        return self.__str__()
+
+    @staticmethod
+    def from_ref(type_ref: 'TypeRef') -> 'TypeName':
+        """
+        Convert a TypeRef to TypeName
+        :param type_ref: TypeRef to convert
+        :return: TypeName
+        """
+        return TypeName(name=type_ref.name, parameters=tuple(TypeName.from_ref(p) for p in type_ref.parameters))
+
 @dataclasses.dataclass
 class DataMeta:
     name: str
@@ -56,10 +79,9 @@ class MetaManager:
 
     def __init__(self):
         self.metas: Dict[str, DataMeta] = {}
-        # self.global_vtable: DefaultDict[str, DataMeta] = DataMeta()
         self.globals = {}
 
-    def create_object(self, name: str, data: Dict[str, Any]) -> DataObject:
+    def create_object(self, name: str, data: Dict[str, Any]|str|int|float|bool) -> DataObject:
         meta = self.metas[name]
         return DataObject(data, meta)
 

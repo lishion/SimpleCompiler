@@ -1,0 +1,24 @@
+trait Animal {
+    def speak() -> String;
+}
+
+struct Dog {name: String}
+impl Animal for Dog {
+    def speak() -> String {
+        return "Woof! My name is " + self.name;
+    }
+}
+let my_dog: Dog = Dog{name: "Buddy"};
+print(my_dog.speak()); # Woof! My name is Buddy
+
+# 实现时也支持泛型约束
+struct Box<T> {
+    value: T
+}
+impl<T: Animal> ToString for Box<T>  {
+    def to_string() -> String {
+        return "In a box: " + self.value.speak();
+    }
+}
+let my_box = Box{value: my_dog};
+print(my_box.to_string()); # In a box: Woof! My name is Buddy

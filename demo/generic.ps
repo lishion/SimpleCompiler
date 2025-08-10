@@ -1,0 +1,15 @@
+# 支持泛型，并且会进行编译器展开
+def id<T>(a: T) -> T {
+    return a;
+}
+
+let a = id(1); # 会编译为 id_Int
+let b = id(1.5); # 会编译为 add_Float
+
+
+# 支持 trait 约束
+def add<T: Add>(a: T, b: T) -> T {
+    return a + b;
+}
+
+let a1 = add(1, 2); # 会编译为add_Int

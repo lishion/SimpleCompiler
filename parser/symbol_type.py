@@ -158,7 +158,7 @@ class FunctionTypeRef:
     name: Optional[str]
     args: List[Union['TypeRef', TypeVar]]
     return_type: 'TypeRef'
-    type_parameters: List['TypeRef'] = field(default_factory=list)
+    type_parameters: List['TypeVar'] = field(default_factory=list)
     association_impl: Optional['TraitImpl'] = None
     association_trait: Optional['TraitRef'] = None
     association_ast: Optional['FunctionDefNode'] = None
@@ -172,7 +172,7 @@ class FunctionTypeRef:
             association_trait=self.association_impl and self.association_impl.trait,
             association_type=self.association_impl and self.association_impl.target_type,
             association_ast=self.association_ast,
-            type_parameters=self.type_parameters
+            #type_parameters=self.type_parameters
         )
 
 
@@ -211,6 +211,7 @@ class TraitImpl:
     type_parameters: List[TypeRef|TypeVar] = field(default_factory=list)
     functions: Dict[str, FunctionTypeRef] = field(default_factory=dict)
     binds: Dict[TypeVar, TypeRef|TypeVar] = field(default_factory=dict)
+    target_type_define: TypeRef | None = None
 
 @dataclass
 class MultiResolvedFunction:

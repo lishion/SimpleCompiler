@@ -173,8 +173,11 @@ class TraitImpls:
     def __init__(self):
         self.trait_impls: List[TraitImpl] = []
 
-    def get_impl(self, type_ref: TypeRef, trait_ref: TraitRef) -> List[TraitImpl]:
+    def get_impl(self, type_ref: TypeRef, trait_ref: TraitRef, need_bind=True) -> List[TraitImpl]:
         impls = []
+        # type_ref: Box<String>
+        # trait_ref: Trait1<T>
+        # impl.trait = Trait1<String>
         for impl in self.trait_impls:
             # print(
             #     trait_ref.name, impl.trait.name
@@ -188,9 +191,10 @@ class TraitImpls:
             if (self.is_type_match(type_ref, impl.target_type)
                         and trait_ref.name == impl.trait.name
                         and len(trait_ref.parameters) == len(impl.trait.parameters)
-                        and all(self.is_type_match(r1, r2) for r1, r2 in zip(trait_ref.parameters, impl.trait.parameters) )
+                        #and all(self.is_type_match(r1, r2) for r1, r2 in zip(trait_ref.parameters, impl.trait.parameters) )
+                        and all(self.is_type_match(r1, r2) for r1, r2 in zip(impl.trait.parameters, trait_ref.parameters) )
             ):
-                impls.append(self.bind_impl(impl, real_target=type_ref, real_trait=trait_ref))
+                impls.append(self.bind_impl(impl, real_target=type_ref, real_trait=trait_ref) if need_bind else impl)
         return impls
 
     def is_type_match(self, r1: TypeRef|TypeVar, r2: TypeRef|TypeVar|TraitRef) -> bool:
@@ -231,7 +235,8 @@ class TraitImpls:
                         if constraint not in r1.constraints:
                             return False
                     # case 2.b
-                    elif not self.get_impl(r1, constraint):
+
+                    elif not self.get_impl(r1, constraint, need_bind=False):
                         return False
         # case 1，如果类型名不同，那么肯定不满足约束
         elif r1.name != r2.name:

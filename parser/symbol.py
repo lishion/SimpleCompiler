@@ -21,7 +21,7 @@ class FunctionSymbol(Symbol):
 
 @dataclass
 class TypeSymbol(Symbol):
-    define: TypeRef|StructTypeRef
+    define: TypeRef|StructTypeRef|PrimitiveType
     parameters: List[TypeRef|TypeVar]
 
 @dataclass

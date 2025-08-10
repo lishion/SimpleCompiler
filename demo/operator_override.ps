@@ -1,0 +1,23 @@
+
+struct Point {
+    x: Int,
+    y: Int,
+}
+
+# 通过实现 Add trait 来重载加法运算符
+impl Add for Point {
+    def add(other: Point) -> Point {
+        return Point{x: self.x + other.x, y: self.y + other.y};
+    }
+}
+
+impl ToString for Point {
+    def to_string() -> String {
+        return "Point{x: " + self.x.to_string() + ", y: " + self.y.to_string() + "}";
+    }
+}
+
+let p1: Point = Point{x: 1, y: 2};
+let p2: Point = Point{x: 3, y: 4};
+let p3: Point = p1 + p2;
+print(p3.to_string()); # Point{x: 4, y: 6}

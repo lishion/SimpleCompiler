@@ -32,6 +32,14 @@ TOKENS.create_by_string("continue")
 TOKENS.create_by_string("true")
 TOKENS.create_by_string("false")
 TOKENS.create_by_string("struct")
+TOKENS.create_by_string("in")
+TOKENS.create_by_string("|")
+TOKENS.create_by_string("&")
+TOKENS.create_by_string("^")
+TOKENS.create_by_string("not")
+TOKENS.create_by_string("!")
+TOKENS.create_by_string(">>")
+TOKENS.create_by_string("<<")
 TOKENS.create(
     Expression.char("#") + Expression.any_char(['\n']).star(),
     "comment"

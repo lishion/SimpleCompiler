@@ -21,7 +21,7 @@ class ASTNode(ABC):
             if type(data) is dict:
                 r = {}
                 for k, v in data.items():
-                    if k in ("scope", "node_type", "start_pos", "end_pos", 'trait_node'):
+                    if k in ("scope", "node_type", "start_pos", "end_pos", 'trait_node', 'transformed', 'literal_type'):
                         continue
                     if isinstance(v, list) or isinstance(v, tuple):
                         r[k] = helper(v, level + 1)
@@ -206,6 +206,7 @@ class FunctionCallNode(ASTNode):
         self.define_ast: FunctionDefNode = None
         self.type_binds: dict['TypeVar', Any] = {}
         self.call_ref: ResolvedFunctionRef = None
+        self.origin_call_ref: ResolvedFunctionRef = None
         self.dyn_dispatch = True
 
 
@@ -479,5 +480,32 @@ class DynTraitNode(ASTNode):
 
     def accept(self, visitor: 'Visitor', context=None):
         return visitor.visit_dyn_trait(self, context)
+
+class ForNode(ASTNode):
+    def __init__(self, var: VarNode, iterator: ASTNode, body: BlockNode):
+        super().__init__()
+        self.var = var
+        self.iterator = iterator
+        self.body = body
+
+
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_for(self, context)
+
+class LogicNotNode(ASTNode):
+    def __init__(self, expr: ASTNode):
+        super().__init__()
+        self.expr = expr
+
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_logic_not(self, context)
+
+class BitwiseNotNode(ASTNode):
+    def __init__(self, expr: ASTNode):
+        super().__init__()
+        self.expr = expr
+
+    def accept(self, visitor: 'Visitor', context=None):
+        return visitor.visit_bitwise_not(self, context)
 
 TraitInstance = TypeConstraint
